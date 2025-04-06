@@ -1,0 +1,322 @@
+/* frontend/style.css */
+
+body {
+    font-family: sans-serif;
+    margin: 0;
+    padding: 10px;
+    background-color: #f4f4f4;
+    position: relative;
+    font-size: 14px;
+}
+
+.main-container {
+    display: flex;
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+}
+
+#chart-container {
+    flex: 1 1 70%; /* Chart takes up more space */
+    min-width: 500px; /* Minimum width for chart */
+    height: calc(600px - 40px);
+    border: 1px solid #ccc;
+    background-color: #fff;
+    margin-right: 10px;
+    margin-bottom: 10px; /* Add margin for spacing */
+}
+
+#trade-panel {
+    flex: 1 1 25%; /* Panel takes less space */
+    min-width: 300px; /* Minimum width for panel */
+    height: calc(600px - 40px);
+    border: 1px solid #ccc;
+    background-color: #ffffff;
+    padding: 15px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+    overflow-y: auto; /* Add scroll if content overflows */
+}
+
+.controls {
+    width: 100%;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.controls button,
+.controls label {
+    padding: 6px 12px;
+    margin: 0 5px;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    background-color: #eee;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.controls label {
+    display: inline-block;
+}
+
+.controls button:hover,
+.controls label:hover {
+    background-color: #ddd;
+}
+
+.controls input[type="file"] {
+    display: none;
+}
+
+.interval-btn.active {
+    background-color: #007bff;
+    color: white;
+    border-color: #0056b3;
+}
+
+/* Adjusted API settings display */
+#api-settings {
+    background-color: #f0f0f0; /* Slightly different background */
+    border: 1px solid #ddd;
+    padding: 8px 12px; /* Adjusted padding */
+    margin-bottom: 15px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+#api-settings h4 { /* Removed h4, using panel-rows now */
+    /* margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 14px; */
+}
+
+#api-settings .panel-row { /* Style the rows inside api-settings */
+     margin-bottom: 4px;
+}
+#api-settings .panel-row label {
+    color: #333; /* Darker label */
+    font-weight: normal;
+}
+#api-settings .panel-row .value {
+    font-weight: bold;
+}
+
+/* Style for different connection statuses */
+#api-status[style*="color: green"],
+#user-stream-status[style*="color: green"] {
+    /* Style for connected */
+}
+#api-status[style*="color: orange"],
+#user-stream-status[style*="color: orange"] {
+    /* Style for disconnected/connecting */
+}
+#api-status[style*="color: red"],
+#user-stream-status[style*="color: red"] {
+    /* Style for error */
+}
+
+
+.panel-section {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.panel-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.panel-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    align-items: center;
+}
+
+.panel-row label {
+    color: #555;
+}
+
+.panel-row .value {
+    font-weight: bold;
+    text-align: right;
+}
+
+.panel-row input[type="number"],
+.panel-row select {
+    padding: 4px 6px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    max-width: 100px;
+    text-align: right;
+}
+
+.panel-row .leverage-section {
+    display: flex;
+    align-items: center;
+}
+
+.panel-row .leverage-section input {
+    margin-right: 5px;
+    max-width: 50px; /* Smaller leverage input */
+}
+
+.panel-row .leverage-section button {
+    padding: 2px 6px;
+    font-size: 11px;
+    margin-left: 5px;
+    cursor: pointer;
+}
+
+
+.order-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+}
+
+.order-buttons button {
+    flex: 1;
+    padding: 10px 5px;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.order-buttons .buy-btn {
+    background-color: #28a745;
+    margin-right: 5px;
+}
+
+.order-buttons .buy-btn:hover {
+    background-color: #218838;
+}
+
+.order-buttons .sell-btn {
+    background-color: #dc3545;
+    margin-left: 5px;
+}
+
+.order-buttons .sell-btn:hover {
+    background-color: #c82333;
+}
+
+.order-options {
+    margin-top: 8px;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.order-options label {
+    display: flex;
+    align-items: center;
+    color: #555;
+    cursor: pointer;
+}
+
+.order-options input[type="checkbox"] {
+    margin-right: 4px;
+    cursor: pointer;
+}
+
+.position-info {
+    margin-top: 15px;
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid #e9ecef;
+}
+
+.position-info h5 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+.position-info .no-position {
+    color: #6c757d;
+    text-align: center;
+}
+
+.position-pnl.positive {
+    color: #28a745;
+}
+
+.position-pnl.negative {
+    color: #dc3545;
+}
+
+#status-bar {
+    width: 100%; /* Full width relative to parent */
+    margin: 0 auto 10px auto; /* Center horizontally, add bottom margin */
+    padding: 8px 15px;
+    text-align: center;
+    border-radius: 4px;
+    font-size: 13px;
+    min-height: 1.5em;
+    box-sizing: border-box;
+    transition: background-color 0.3s ease;
+    border: 1px solid transparent;
+}
+
+.status-info {
+    background-color: #e0e0e0;
+    color: #333;
+    border-color: #c0c0c0;
+}
+
+.status-success {
+    background-color: #d4edda;
+    color: #155724;
+    border-color: #c3e6cb;
+}
+
+.status-error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border-color: #f5c6cb;
+}
+
+.status-warning {
+    background-color: #fff3cd;
+    color: #856404;
+    border-color: #ffeeba;
+}
+
+#trade-tooltip {
+    position: absolute;
+    display: none;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: pre;
+    z-index: 100;
+    pointer-events: none;
+    border: 1px solid #555;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+    .main-container {
+        flex-direction: column;
+    }
+    #chart-container {
+        margin-right: 0;
+        width: 100%;
+        flex-basis: auto;
+    }
+    #trade-panel {
+        margin-top: 10px;
+        width: 100%;
+        height: auto; /* Adjust height */
+        flex-basis: auto;
+    }
+}
