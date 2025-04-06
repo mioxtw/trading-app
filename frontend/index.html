@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>幣安交易圖表與面板 (前後端分離)</title>
+    <link rel="stylesheet" href="style.css"> <!-- 引入 CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/klinecharts@9.8.12/dist/umd/klinecharts.min.js"></script>
+    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="controls">
+    <!-- ... (控制按鈕不變) ... -->
+    <span>時間間隔:</span>
+    <button class="interval-btn" data-interval="15m">15m</button>
+    <button class="interval-btn active" data-interval="1h">1H</button>
+    <button class="interval-btn" data-interval="4h">4H</button>
+    <button class="interval-btn" data-interval="1d">1D</button>
+    <span>  |  </span>
+    <label for="fileInputControl">載入交易紀錄 (CSV 或 XLSX)</label>
+    <input type="file" id="fileInputControl" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
+</div>
+
+<div id="status-bar" class="status-info">正在連接後端...</div>
+
+<div class="main-container">
+    <div id="chart-container"></div>
+    <div id="trade-panel">
+        <!-- API Settings - 現在只是顯示模式 -->
+        <div id="api-settings" style="padding: 5px 10px; background-color: #eee;">
+             <div class="panel-row">
+                <label>後端模式:</label>
+                <span id="backend-mode" class="value">未知</span>
+            </div>
+            <div class="panel-row">
+                <label>後端連接:</label>
+                <span id="api-status" class="value">未連接</span>
+            </div>
+             <div class="panel-row">
+                <label>用戶數據:</label>
+                <span id="user-stream-status" class="value">未連接</span>
+            </div>
+        </div>
+
+        <!-- Trading Panel UI -->
+        <div class="panel-section">
+            <!-- ... (交易對、槓桿、可用餘額等不變) ... -->
+             <div class="panel-row">
+                <span id="trade-symbol">BTCUSDT</span>
+                <span>永續</span>
+                 <div class="leverage-section value">
+                    <span>全倉</span>
+                    <input type="number" id="leverage-input" value="10" min="1" max="125" step="1">x
+                    <button id="set-leverage-btn">設定</button>
+                </div>
+            </div>
+             <div class="panel-row">
+                <label>可用</label>
+                <span id="available-balance" class="value">-.-- USDT</span>
+            </div>
+        </div>
+
+        <div class="panel-section">
+             <!-- ... (訂單類型、數量、選項、保證金、下單按鈕等不變) ... -->
+             <div class="panel-row">
+                 <label>訂單類型</label>
+                 <select id="order-type-select" disabled>
+                     <option value="MARKET" selected>市價單</option>
+                 </select>
+            </div>
+            <div class="panel-row">
+                <label for="quantity-input">數量</label>
+                <input type="number" id="quantity-input" step="0.001" placeholder="0.000">
+                <span style="margin-left: 5px;">BTC</span>
+            </div>
+             <div class="order-options">
+                 <label><input type="checkbox" id="reduce-only-checkbox"> 只減倉</label>
+            </div>
+            <div class="panel-row" style="margin-top: 8px;">
+                <label>最大可開</label>
+                 <span id="max-order-size" class="value">-.--- BTC</span>
+            </div>
+             <div class="panel-row">
+                <label>保證金</label>
+                 <span id="margin-required" class="value">-.-- USDT</span>
+            </div>
+            <div class="order-buttons">
+                <button id="buy-long-btn" class="buy-btn">買入 / 做多</button>
+                <button id="sell-short-btn" class="sell-btn">賣出 / 做空</button>
+            </div>
+        </div>
+
+        <!-- Position Info -->
+        <div class="position-info panel-section">
+            <!-- ... (持倉顯示區塊不變) ... -->
+             <h5>持有倉位 (<span id="position-count">0</span>)</h5>
+            <div id="position-details">
+                <div class="no-position">沒有持倉</div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<div id="trade-tooltip"></div>
+
+<script src="script.js"></script> <!-- 引入 JavaScript -->
+
+</body>
+</html>
