@@ -333,7 +333,173 @@ async function getTradeHistory(symbol, limit = 500) {
     return makeRequest('/fapi/v1/userTrades', 'GET', params, false);
 }
 
+// 新增：整理成交紀錄為倉位歷史
+async function getPositionHistory(symbol, limit = 500, startTime = null, endTime = null) {
+    console.log(`正在整理 ${symbol} 的倉位歷史紀錄...`);
+    const params = {
+        symbol: symbol,
+        limit: Math.min(limit, 1000) // 確保 limit 不超過 1000
+    };
+    if (startTime) params.startTime = startTime;
+    if (endTime) params.endTime = endTime;
 
+    try {
+        // 1. 獲取原始成交紀錄 (按時間升序排列)
+        const trades = await getTradeHistory(symbol, params.limit, params.startTime, params.endTime);
+        if (!Array.isArray(trades) || trades.length === 0) {
+            console.log(`未找到 ${symbol} 的成交紀錄。`);
+            return [];
+        }
+
+        // 按時間排序 (幣安返回的應該是升序，但以防萬一)
+        trades.sort((a, b) => a.time - b.time);
+
+        const positionHistory = [];
+        let openPositions = { // 追蹤未完全平倉的開倉交易 (FIFO)
+            'BUY': [], // 開多單的記錄 { id, time, price, qty, commission, commissionAsset, remainingQty }
+            'SELL': [] // 開空單的記錄 { id, time, price, qty, commission, commissionAsset, remainingQty }
+        };
+
+        // 2. 遍歷成交紀錄
+        for (const trade of trades) {
+            const tradeQty = parseFloat(trade.qty);
+            const tradePrice = parseFloat(trade.price);
+            const realizedPnl = parseFloat(trade.realizedPnl);
+            const commission = parseFloat(trade.commission);
+            const commissionAsset = trade.commissionAsset;
+            const tradeTime = trade.time;
+            const tradeId = trade.id;
+            const isBuyer = trade.isBuyer; // true: 主動買入, false: 主動賣出
+
+            // 判斷是開倉還是平倉
+            // 簡化判斷：realizedPnl != 0 通常意味著平倉事件發生
+            // side: 'BUY' or 'SELL' (指成交的方向，不是開/平倉動作)
+            // isBuyer: true -> 買入成交; false -> 賣出成交
+
+            let isClosingTrade = realizedPnl !== 0;
+            let openSide = null; // 該筆交易對應的開倉方向
+            let closeSide = null; // 該筆交易對應的平倉方向
+
+            if (trade.side === 'BUY') { // 買入成交
+                if (openPositions['SELL'].length > 0) { // 如果有空頭持倉，則此買入為平空
+                    isClosingTrade = true;
+                    closeSide = 'SELL'; // 平掉的是空頭倉位
+                    openSide = 'SELL'; // 匹配的開倉是空頭
+                } else { // 否則為開多
+                    openSide = 'BUY';
+                }
+            } else { // 賣出成交 (trade.side === 'SELL')
+                if (openPositions['BUY'].length > 0) { // 如果有多頭持倉，則此賣出為平多
+                    isClosingTrade = true;
+                    closeSide = 'BUY'; // 平掉的是多頭倉位
+                    openSide = 'BUY'; // 匹配的開倉是多頭
+                } else { // 否則為開空
+                    openSide = 'SELL';
+                }
+            }
+
+
+            if (isClosingTrade && openSide && openPositions[openSide].length > 0) {
+                // --- 處理平倉 ---
+                let qtyToClose = tradeQty;
+                let totalOpenCost = 0;
+                let totalOpenCommission = 0; // 累計匹配的開倉手續費
+                let earliestOpenTime = tradeTime; // 初始化為當前平倉時間
+                let matchedOpenQty = 0;
+                const matchedOpenTrades = []; // 記錄匹配的開倉交易詳情
+
+                // 從最早的未平倉交易開始匹配 (FIFO)
+                while (qtyToClose > 0 && openPositions[openSide].length > 0) {
+                    const openTrade = openPositions[openSide][0];
+                    const qtyAvailable = openTrade.remainingQty;
+                    const qtyToMatch = Math.min(qtyToClose, qtyAvailable);
+
+                    matchedOpenQty += qtyToMatch;
+                    totalOpenCost += qtyToMatch * openTrade.price;
+                    totalOpenCommission += (qtyToMatch / openTrade.qty) * openTrade.commission; // 按比例計算手續費
+                    earliestOpenTime = Math.min(earliestOpenTime, openTrade.time);
+                    matchedOpenTrades.push({ ...openTrade, matchedQty: qtyToMatch }); // 記錄匹配詳情
+
+                    openTrade.remainingQty -= qtyToMatch;
+                    qtyToClose -= qtyToMatch;
+
+                    if (openTrade.remainingQty <= 1e-9) { // 考慮浮點數精度，如果剩餘數量極小，則移除
+                        openPositions[openSide].shift(); // 移除已完全匹配的開倉記錄
+                    }
+                }
+
+                if (matchedOpenQty > 0) {
+                    const avgOpenPrice = totalOpenCost / matchedOpenQty;
+                    const avgClosePrice = tradePrice; // 本次平倉的價格
+                    const closeTime = tradeTime;
+                    const durationMs = closeTime - earliestOpenTime;
+                    const totalCommission = commission + totalOpenCommission; // 平倉手續費 + 匹配的開倉手續費
+
+                    // 總盈虧 = realizedPnl (已包含資金費用等) - 總手續費
+                    // 注意：realizedPnl 已經是扣除開倉成本後的結果，但未扣除手續費
+                    // 幣安文檔說明 realizedPnl 是扣除資金費用後的已實現盈虧
+                    // 為了更清晰，我們用 (平倉價值 - 開倉價值) - 總手續費
+                    let pnl = 0;
+                    if (openSide === 'BUY') { // 平多倉 (賣出)
+                        pnl = (avgClosePrice * matchedOpenQty) - (avgOpenPrice * matchedOpenQty);
+                    } else { // 平空倉 (買入)
+                        pnl = (avgOpenPrice * matchedOpenQty) - (avgClosePrice * matchedOpenQty);
+                    }
+                    const finalPnl = pnl - totalCommission; // 扣除總手續費
+
+                    positionHistory.push({
+                        symbol: symbol,
+                        openSide: openSide, // 'BUY' (多) or 'SELL' (空)
+                        quantity: matchedOpenQty,
+                        avgOpenPrice: avgOpenPrice,
+                        avgClosePrice: avgClosePrice,
+                        openTime: earliestOpenTime,
+                        closeTime: closeTime,
+                        durationMs: durationMs,
+                        realizedPnl: realizedPnl, // 保留原始 PNL 參考
+                        commission: totalCommission, // 總手續費
+                        commissionAsset: commissionAsset, // 假設手續費資產一致
+                        pnl: finalPnl, // 計算出的淨盈虧
+                        closeTradeId: tradeId,
+                        matchedOpenTradeIds: matchedOpenTrades.map(t => t.id) // 追蹤匹配的開倉單 ID
+                    });
+                }
+
+                // 如果平倉數量大於已記錄的開倉數量 (可能數據不完整或邏輯問題)，記錄剩餘部分為新的開倉
+                if (qtyToClose > 1e-9) {
+                     console.warn(`平倉交易 ${tradeId} 的數量 ${tradeQty} 大於可匹配的開倉數量 ${matchedOpenQty}。可能數據不完整或起始狀態有誤。`);
+                     // 這裡可以選擇忽略，或者將無法匹配的部分視為新的反向開倉（但不建議）
+                }
+
+
+            } else if (openSide) {
+                // --- 處理開倉 ---
+                openPositions[openSide].push({
+                    id: tradeId,
+                    time: tradeTime,
+                    price: tradePrice,
+                    qty: tradeQty,
+                    commission: commission,
+                    commissionAsset: commissionAsset,
+                    remainingQty: tradeQty // 初始剩餘數量等於交易數量
+                });
+            } else {
+                 console.warn(`無法確定交易 ${tradeId} 的開/平倉狀態或方向。`);
+            }
+        }
+
+        console.log(`整理完成，共生成 ${positionHistory.length} 條倉位歷史紀錄。`);
+        return positionHistory;
+
+    } catch (error) {
+        console.error(`整理倉位歷史紀錄時出錯 (${symbol}):`, error);
+        // 向上拋出錯誤，讓路由處理
+        throw error;
+    }
+}
+
+
+// --- 導出模塊 ---
 module.exports = {
     getKlineData,
     getAccountBalance,
@@ -342,6 +508,7 @@ module.exports = {
     placeOrder,
     getListenKey,
     keepAliveListenKey,
-    placeOrCancelConditionalOrder, // 導出新函數
-    getTradeHistory, // <--- 導出 getTradeHistory
+    placeOrCancelConditionalOrder,
+    getTradeHistory,
+    getPositionHistory, // <--- 導出新函數
 };

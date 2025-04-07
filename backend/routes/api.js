@@ -66,6 +66,16 @@ router.get('/trades/history', asyncHandler(async (req, res) => {
     res.json({ success: true, data });
 }));
 
+// 新增：獲取倉位歷史紀錄
+router.get('/position-history', asyncHandler(async (req, res) => {
+    const { symbol, limit, startTime, endTime } = req.query; // 允許傳遞時間範圍
+    if (!symbol) {
+        return res.status(400).json({ success: false, message: '缺少 symbol 參數' });
+    }
+    const data = await binanceService.getPositionHistory(symbol, limit || 500, startTime, endTime); // 調用新的 service 函數
+    res.json({ success: true, data });
+}));
+
 // 設定槓桿
 router.post('/leverage', asyncHandler(async (req, res) => {
     const { symbol, leverage } = req.body;
