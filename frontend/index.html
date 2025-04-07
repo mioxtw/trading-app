@@ -5,9 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>幣安交易圖表與面板 (前後端分離)</title>
     <link rel="stylesheet" href="style.css"> <!-- 引入 CSS -->
-    <script src="https://cdn.jsdelivr.net/npm/klinecharts@9.8.12/dist/umd/klinecharts.min.js"></script>
-    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- Libraries will be loaded at the end of body -->
 </head>
 <body>
 
@@ -78,6 +76,14 @@
              <div class="order-options">
                  <label><input type="checkbox" id="reduce-only-checkbox"> 只減倉</label>
             </div>
+            <div class="panel-row">
+                <label for="take-profit-input">止盈</label>
+                <input type="number" id="take-profit-input" step="any" placeholder="價格">
+            </div>
+            <div class="panel-row">
+                <label for="stop-loss-input">止損</label>
+                <input type="number" id="stop-loss-input" step="any" placeholder="價格">
+            </div>
             <div class="panel-row" style="margin-top: 8px;">
                 <label>最大可開</label>
                  <span id="max-order-size" class="value">-.--- BTC</span>
@@ -110,7 +116,18 @@
 
 <div id="trade-tooltip"></div>
 
-<script src="script.js"></script> <!-- 引入 JavaScript -->
+<!-- Load libraries first -->
+<script src="https://cdn.jsdelivr.net/npm/klinecharts@9.8.12/dist/umd/klinecharts.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
+<!-- Load modules -->
+<script src="chart.js"></script>
+<script src="market.js"></script>
+<script src="trade.js"></script>
+
+<!-- Load main entry point last -->
+<script src="script.js"></script>
 
 </body>
 </html>
