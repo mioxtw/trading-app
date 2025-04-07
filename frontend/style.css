@@ -140,7 +140,13 @@ body {
 
 .panel-row .value {
     font-weight: bold;
-    text-align: right;
+    text-align: right; /* Default alignment for values */
+}
+
+/* Container specifically for PNL value and percentage to ensure right alignment */
+.pnl-container {
+    flex-grow: 1; /* Take remaining space */
+    text-align: right; /* Align text inside this container to the right */
 }
 
 .panel-row input[type="number"],

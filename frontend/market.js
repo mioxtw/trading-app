@@ -191,7 +191,15 @@ function handleTickData(tick) {
     }
 
     // Update global mark price immediately
-    window.globalState.currentMarkPrice = tickPrice;
+    window.globalState.currentMarkPrice = tickPrice; // Update global mark price
+
+    // --- 新增：使用最新的價格更新實時 PNL ---
+    if (typeof updateRealtimePnl === 'function') {
+        updateRealtimePnl(tickPrice);
+    } else {
+        // console.warn("updateRealtimePnl function not found for tick update.");
+    }
+    // ------------------------------------
 
     // Update the current candle on the chart
     const currentCandle = window.globalState.currentCandle;

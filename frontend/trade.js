@@ -134,7 +134,7 @@ function updateAccountPanel(balanceData, positionRiskData) {
                     <div class="panel-row"><label>持倉數量 (${quantityUnitSpan?.textContent || '?'})</label><span class="value">${formatNumber(posAmt, window.globalState.quantityPrecision)}</span></div>
                     <div class="panel-row"><label>開倉價格 (USDT)</label><span class="value">${formatCurrency(entryPrice, window.globalState.pricePrecision)}</span></div>
                     <div class="panel-row"><label>標記價格 (USDT)</label><span class="value">${formatCurrency(markPrice, window.globalState.pricePrecision)}</span></div>
-                    <div class="panel-row"><label>未實現盈虧 (USDT)</label><span class="value position-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)} (${pnl >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%)</span></div>
+                    <div class="panel-row"><label>未實現盈虧 (USDT)</label><span class="pnl-container"><span id="realtime-pnl-value" class="value position-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)}</span> (<span id="realtime-pnl-percent" class="${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%</span>)</span></div>
                     <div class="panel-row"><label>預估強平價 (USDT)</label><span class="value">${formatCurrency(liqPrice, window.globalState.pricePrecision)}</span></div>
                     <div class="panel-row"><label>保證金 (USDT)</label><span class="value">${formatCurrency(estimatedMargin)}</span></div>
                     <div class="panel-row"><label>槓桿</label><span class="value">${leverage}x</span></div>
@@ -825,6 +825,54 @@ function attachTradeEventListeners() {
             }
         });
     }
+}
+
+// --- Realtime PNL Update ---
+function updateRealtimePnl(markPrice) {
+    if (!window.globalState || !window.globalState.positionInfo || !window.globalState.currentSymbol) {
+        return; // Not ready or no position info
+    }
+
+    const positionInfo = window.globalState.positionInfo;
+    const currentPosition = positionInfo.find(p => p.symbol === window.globalState.currentSymbol && parseFloat(p.positionAmt) !== 0);
+
+    const pnlValueSpan = document.getElementById('realtime-pnl-value');
+    const pnlPercentSpan = document.getElementById('realtime-pnl-percent');
+
+    if (!currentPosition || !pnlValueSpan || !pnlPercentSpan) {
+        // If no position or elements not found, ensure display is cleared or default
+        // (updateAccountPanel handles the initial 'no position' state)
+        return;
+    }
+
+    const posAmt = parseFloat(currentPosition.positionAmt);
+    const entryPrice = parseFloat(currentPosition.entryPrice);
+    // Recalculate margin based on stored data (consistent with updateAccountPanel)
+    let estimatedMargin = parseFloat(currentPosition.isolatedWallet);
+    if (isNaN(estimatedMargin) || estimatedMargin <= 0) {
+        estimatedMargin = parseFloat(currentPosition.initialMargin);
+        if (isNaN(estimatedMargin) || estimatedMargin <= 0) {
+            const leverage = parseInt(currentPosition.leverage) || window.globalState.currentLeverage || 1;
+            estimatedMargin = Math.abs(posAmt * entryPrice / leverage);
+        }
+    }
+
+
+    if (isNaN(posAmt) || isNaN(entryPrice) || isNaN(markPrice) || markPrice <= 0 || isNaN(estimatedMargin)) {
+        console.warn("Cannot update realtime PNL due to invalid data:", { posAmt, entryPrice, markPrice, estimatedMargin });
+        return; // Invalid data for calculation
+    }
+
+    const pnl = (markPrice - entryPrice) * posAmt;
+    const pnlPercent = estimatedMargin > 0 ? (pnl / estimatedMargin) * 100 : 0;
+
+    // Update PNL value display
+    pnlValueSpan.textContent = `${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)}`;
+    pnlValueSpan.className = `value position-pnl ${pnl >= 0 ? 'positive' : 'negative'}`; // Update class for color
+
+    // Update PNL percentage display
+    pnlPercentSpan.textContent = `${pnlPercent >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%`;
+    pnlPercentSpan.className = `${pnl >= 0 ? 'positive' : 'negative'}`; // Update class for color
 }
 
 
