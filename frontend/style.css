@@ -391,3 +391,43 @@ body {
         flex-basis: auto;
     }
 }
+
+/* 新增：持倉操作按鈕容器 */
+#position-actions-container {
+   /* display: none; */ /* 預設隱藏 (HTML 中已用 inline style) */
+   margin-top: 10px; /* 與持倉詳情保持間距 */
+   display: flex; /* 使用 flex 佈局按鈕 */
+   justify-content: space-around; /* 按鈕之間留有空隙 */
+}
+
+/* 新增：持倉操作按鈕樣式 */
+.action-btn {
+   padding: 6px 12px;
+   font-size: 13px;
+   cursor: pointer;
+   border: 1px solid #ccc;
+   border-radius: 4px;
+   background-color: #eee;
+   transition: background-color 0.2s ease;
+   flex-basis: 48%; /* 讓兩個按鈕大致平分空間 */
+   text-align: center;
+}
+
+.action-btn:hover {
+   background-color: #ddd;
+}
+
+/* 可以為特定按鈕添加不同顏色 (可選) */
+/*
+#close-all-btn {
+    background-color: #ffc107;
+    border-color: #ffac07;
+    color: #333;
+}
+
+#close-half-btn {
+    background-color: #17a2b8;
+    border-color: #117a8b;
+    color: white;
+}
+*/

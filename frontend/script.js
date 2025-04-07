@@ -27,6 +27,9 @@ const sellShortBtn = document.getElementById('sell-short-btn');
 const positionCountSpan = document.getElementById('position-count');
 const positionDetailsDiv = document.getElementById('position-details');
 const quantityUnitSpan = quantityInput.nextElementSibling;
+const closeAllBtn = document.getElementById('close-all-btn'); // 新增：全平倉按鈕
+const closeHalfBtn = document.getElementById('close-half-btn'); // 新增：平一半按鈕
+const positionActionsContainer = document.getElementById('position-actions-container'); // 新增：按鈕容器
 
 // --- State Variables ---
 // ... (保持不變) ...
@@ -166,6 +169,11 @@ function updateAccountPanel(balanceData, positionRiskData) {
         }
     }
 
+    // 控制按鈕容器的顯示/隱藏
+    if (positionActionsContainer) {
+        positionActionsContainer.style.display = positionFound ? 'flex' : 'none';
+    }
+
     if (!positionFound) {
         positionInfo = positionRiskData; // Store even if no current position (for leverage info)
         positionCountSpan.textContent = '0';
@@ -183,6 +191,55 @@ function fetchAndSetCurrentLeverage() { if (!positionInfo || !Array.isArray(posi
 async function handleChangeLeverage() { const newLeverage = parseInt(leverageInput.value); if (isNaN(newLeverage) || newLeverage < 1 || newLeverage > 125) { updateStatus("無效的槓桿值 (1-125)", "warning"); fetchAndSetCurrentLeverage(); return; } updateStatus(`正在請求後端設定 ${currentSymbol} 槓桿為 ${newLeverage}x...`, "info"); const result = await fetchFromBackend('/leverage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: currentSymbol, leverage: newLeverage }) }); if (result) { updateStatus(`${currentSymbol} 槓桿已成功設定為 ${result.leverage}x`, "success"); currentLeverage = parseInt(result.leverage); leverageInput.value = currentLeverage; fetchInitialData(); } else { updateStatus("設定槓桿失敗", "error"); fetchAndSetCurrentLeverage(); } }
 async function placeMarketOrder(side) { const quantity = parseFloat(quantityInput.value); if (isNaN(quantity) || quantity <= 0) { updateStatus("請輸入有效的訂單數量", "warning"); return; } const formattedQuantity = quantity.toFixed(quantityPrecision); if (Math.abs(parseFloat(formattedQuantity) - quantity) > 1e-9 ) { updateStatus(`數量精度不符，請使用 ${quantityPrecision} 位小數 (e.g., ${formattedQuantity})`, "warning"); quantityInput.value = formattedQuantity; return; } const reduceOnly = reduceOnlyCheckbox.checked; const orderParams = { symbol: currentSymbol, side: side, type: 'MARKET', quantity: formattedQuantity }; if (reduceOnly) { orderParams.reduceOnly = 'true'; } updateStatus(`正在請求後端提交 ${side === 'BUY' ? '買入' : '賣出'} 市價單...`, "info"); const result = await fetchFromBackend('/order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(orderParams) }); if (result && result.orderId) { updateStatus(`後端回報訂單提交成功 (ID: ${result.orderId}, Status: ${result.status})`, "success"); quantityInput.value = ''; reduceOnlyCheckbox.checked = false; } else { updateStatus("下單請求失敗", "error"); } }
 function updateCalculations() { const quantity = parseFloat(quantityInput.value) || 0; const leverage = parseInt(leverageInput.value) || currentLeverage || 1; const price = currentMarkPrice || currentCandle?.close || 0; let requiredMargin = 0; if (quantity > 0 && price > 0 && leverage > 0) { requiredMargin = (quantity * price) / leverage; } marginRequiredSpan.textContent = `${formatCurrency(requiredMargin)} USDT`; let maxOrderSize = 0; if (usdtBalance > 0 && price > 0 && leverage > 0) { maxOrderSize = (usdtBalance * 0.95 * leverage) / price; } maxOrderSizeSpan.textContent = `${formatNumber(maxOrderSize, quantityPrecision)} ${quantityUnitSpan.textContent || '...'}`; }
+
+// --- 新增：處理平倉操作 ---
+async function handleClosePosition(closeFraction) {
+    if (!positionInfo || !Array.isArray(positionInfo)) {
+        updateStatus("無法獲取持倉信息", "warning");
+        return;
+    }
+    const currentPosition = positionInfo.find(p => p.symbol === currentSymbol && parseFloat(p.positionAmt) !== 0);
+
+    if (!currentPosition) {
+        updateStatus("當前沒有持倉", "info");
+        return;
+    }
+
+    const posAmt = parseFloat(currentPosition.positionAmt);
+    const side = posAmt > 0 ? 'SELL' : 'BUY'; // 多單賣出平倉，空單買入平倉
+    let quantityToClose = Math.abs(posAmt) * closeFraction;
+
+    // 確保數量精度符合要求
+    const formattedQuantity = quantityToClose.toFixed(quantityPrecision);
+    if (parseFloat(formattedQuantity) <= 0) {
+         updateStatus("計算出的平倉數量過小或為零", "warning");
+         return;
+    }
+
+    const actionText = closeFraction === 1 ? '全平倉' : `平倉 ${closeFraction * 100}%`;
+    updateStatus(`正在請求後端 ${actionText} (${side} ${formattedQuantity})...`, "info");
+
+    const orderParams = {
+        symbol: currentSymbol,
+        side: side,
+        type: 'MARKET',
+        quantity: formattedQuantity,
+        reduceOnly: 'true' // 確保是只減倉訂單
+    };
+
+    const result = await fetchFromBackend('/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderParams)
+    });
+
+    if (result && result.orderId) {
+        updateStatus(`後端回報 ${actionText} 訂單提交成功 (ID: ${result.orderId}, Status: ${result.status})`, "success");
+        // 成功後通常不需要做什麼，等待 WebSocket 更新 UI
+    } else {
+        updateStatus(`${actionText} 請求失敗`, "error");
+    }
+}
 
 
 // --- Chart Initialization and Data Loading ---
@@ -284,6 +341,9 @@ leverageInput.addEventListener('change', updateCalculations);
 quantityInput.addEventListener('input', updateCalculations);
 buyLongBtn.addEventListener('click', () => placeMarketOrder('BUY'));
 sellShortBtn.addEventListener('click', () => placeMarketOrder('SELL'));
+// 新增：平倉按鈕事件監聽器 (修正重複)
+if (closeAllBtn) closeAllBtn.addEventListener('click', () => handleClosePosition(1)); // 1 表示 100%
+if (closeHalfBtn) closeHalfBtn.addEventListener('click', () => handleClosePosition(0.5)); // 0.5 表示 50%
 
 
 // --- Initialization Function ---
@@ -498,99 +558,65 @@ function makePriceEditable(spanElement) {
         }
     };
 
+    // 添加事件監聽器
     input.addEventListener('blur', handleBlur);
     input.addEventListener('keydown', handleKeydown);
 }
 // ***** END OF MODIFIED makePriceEditable *****
 
-// ***** MODIFIED setStopOrder to use actual API call *****
+
+// --- API Call for Setting Stop Orders ---
 async function setStopOrder(symbol, type, price) {
-    // price 為 '0.00' 或 0 表示取消該類型的止盈/止損單
-    const priceNum = parseFloat(price);
-    const action = priceNum === 0 ? '取消' : '設定';
-    console.log(`請求後端 ${action}: ${symbol}, 類型: ${type.toUpperCase()}, 價格: ${price}`);
-    updateStatus(`正在發送 ${type.toUpperCase()} ${action}請求...`, 'info');
-
-
-    // --- 真實的 API 調用 ---
-    // **重要**: 您需要在後端實現 '/api/conditional-order' 端點
-    // 後端需要處理 'create' 和 'cancel' 動作
-    const endpoint = '/conditional-order'; // **修正：移除開頭的 /api**
+    const endpoint = '/stop-order';
     const method = 'POST';
     let body = {};
 
-    // 獲取當前倉位信息以確定 side 和 quantity (從全局變量 positionInfo)
-    // 後端也應該驗證倉位狀態
-    const currentPosition = positionInfo?.find(p => p.symbol === symbol && parseFloat(p.positionAmt) !== 0);
-    const positionAmt = parseFloat(currentPosition?.positionAmt || 0);
-
-    if (priceNum === 0) {
-        // --- 取消訂單 ---
-        console.log(`請求取消 ${symbol} 的 ${type.toUpperCase()} 訂單`);
-        body = {
-            symbol: symbol,
-            action: 'cancel', // 告知後端執行取消操作
-            type: type // 'tp' or 'sl'，告知後端取消哪種類型
-            // 後端可能需要根據 symbol 和 type 查找對應的活動訂單並取消
-            // 或者，如果前端能獲取到訂單 ID，也可以傳遞 orderId
-            // orderId: findExistingStopOrderId(symbol, type) // 需要實現查找邏輯
-        };
-        // 如果沒有倉位，理論上也不應該有止盈止損單，但取消操作通常是安全的
-        if (!currentPosition) {
-             console.warn(`嘗試取消 ${symbol} ${type.toUpperCase()} 時沒有倉位信息，仍嘗試發送取消請求。`);
-        }
-
-    } else {
-        // --- 創建/修改訂單 ---
-        if (!currentPosition || positionAmt === 0) {
-             updateStatus(`無法設定 ${type.toUpperCase()}：沒有 ${symbol} 的持倉`, 'warning');
-             console.error(`無法設定 ${type.toUpperCase()}：沒有 ${symbol} 的持倉`);
-             return false; // 沒有倉位不能設定止盈止損
-        }
-        console.log(`請求設定 ${symbol} 的 ${type.toUpperCase()} 訂單，價格 ${price}`);
-        const orderSide = positionAmt > 0 ? 'SELL' : 'BUY'; // 平倉方向
-        // 根據交易所 API 要求確定訂單類型 (可能是 STOP_MARKET, TAKE_PROFIT_MARKET 等)
-        const orderType = type === 'tp' ? 'TAKE_PROFIT_MARKET' : 'STOP_MARKET'; // 示例
-        const quantity = Math.abs(positionAmt).toFixed(quantityPrecision);
-
-        // 使用 closePosition: true，不再需要前端計算 quantity
-        body = {
-            symbol: symbol,
-            action: 'create', // 告知後端執行創建/修改操作
-            type: type,       // 'tp' or 'sl'
-            price: price,     // 觸發價格
-            side: orderSide,
-            orderType: orderType // 交易所要求的訂單類型
-            // quantity: quantity, // 移除 quantity
-            // reduceOnly: 'true' // 後端將使用 closePosition=true，隱含 reduceOnly
-        };
+    const priceNum = parseFloat(price);
+    if (isNaN(priceNum)) {
+        console.error(`無效的價格傳遞給 setStopOrder: ${price}`);
+        return false;
     }
 
+    // 根據類型構建請求體
+    if (type === 'tp') {
+        body = {
+            symbol: symbol,
+            takeProfitPrice: priceNum.toFixed(pricePrecision), // 發送格式化的價格
+            // stopLossPrice: null // 可選：如果 API 支持同時設置，則需要傳遞現有的 SL 或 null
+        };
+        // 如果 price 為 0，表示取消
+        if (priceNum === 0) {
+            body.cancelTakeProfit = true;
+            delete body.takeProfitPrice; // 取消時不發送價格
+        }
+    } else if (type === 'sl') {
+        body = {
+            symbol: symbol,
+            stopLossPrice: priceNum.toFixed(pricePrecision), // 發送格式化的價格
+            // takeProfitPrice: null // 可選
+        };
+        // 如果 price 為 0，表示取消
+        if (priceNum === 0) {
+            body.cancelStopLoss = true;
+            delete body.stopLossPrice; // 取消時不發送價格
+        }
+    } else {
+        console.error(`未知的止損/止盈類型: ${type}`);
+        return false;
+    }
 
+    // 發送請求到後端
     try {
-        // 使用修正後的 endpoint
         const result = await fetchFromBackend(endpoint, {
             method: method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
-
-        if (result) { // 假設後端成功時返回非 null 或 { success: true }
-             console.log(`後端回報 ${type.toUpperCase()} ${action} 請求成功:`, result);
-             // updateStatus 已在 handleInputComplete 中調用
-             // 建議等待 WebSocket 更新，而不是立即刷新
-             // fetchInitialData();
-             return true;
-        } else {
-             // fetchFromBackend 內部已經處理了錯誤狀態更新
-             console.error(`後端回報 ${type.toUpperCase()} ${action} 請求失敗`);
-             return false;
-        }
+        // 後端應返回 { success: true } 或類似結構表示成功
+        // 這裡假設 fetchFromBackend 在失敗時返回 null
+        return result !== null;
     } catch (error) {
-        // fetchFromBackend 內部已經處理了 fetch 錯誤
-        console.error(`${action} ${type.toUpperCase()} 訂單時捕獲到意外錯誤:`, error);
-        // updateStatus(`${action} ${type.toUpperCase()} 時出錯`, 'error'); // fetchFromBackend 已處理
+        console.error(`設定 ${type.toUpperCase()} 訂單時出錯:`, error);
         return false;
     }
 }
-// ***** END OF MODIFIED setStopOrder *****
