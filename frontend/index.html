@@ -17,10 +17,8 @@
     <button class="interval-btn" data-interval="4h">4H</button>
     <button class="interval-btn" data-interval="1d">1D</button>
     <span>  |  </span>
-    <label for="fileInputControl">載入交易紀錄 (CSV 或 XLSX)</label>
-    <input type="file" id="fileInputControl" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
     <label for="showHistoryCheckbox" style="margin-left: 10px;">
-        <input type="checkbox" id="showHistoryCheckbox" checked> 顯示歷史成交紀錄
+        <input type="checkbox" id="showHistoryCheckbox" checked> 顯示倉位歷史紀錄
     </label>
 </div>
 
@@ -121,8 +119,7 @@
 
 <!-- Load libraries first -->
 <script src="https://cdn.jsdelivr.net/npm/klinecharts@9.8.12/dist/umd/klinecharts.min.js"></script>
-<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<!-- 移除 PapaParse 和 SheetJS 函式庫 -->
 
 <!-- Load modules -->
 <script src="chart.js"></script>
