@@ -2,15 +2,18 @@
 
 // --- DOM Elements (Chart related) ---
 const chartContainer = document.getElementById('chart-container');
-const fileInput = document.getElementById('fileInputControl'); // For trade marks
+// const fileInput = document.getElementById('fileInputControl'); // 不再需要
 const intervalButtons = document.querySelectorAll('.interval-btn'); // For interval change
 const tooltipElement = document.getElementById('trade-tooltip'); // For trade mark tooltip
 
 // --- Chart State Variables (subset of original state) ---
 // Assuming window.globalState is defined in the main script.js
 // window.globalState.klineChart = null; // Managed within initChart
-// window.globalState.allTrades = []; // Managed by parsing functions
-const TRADE_MARKER_GROUP_ID = 'tradeMarkers';
+// window.globalState.allTrades = []; // 不再需要
+// const TRADE_MARKER_GROUP_ID = 'tradeMarkers'; // 不再需要
+
+// --- 新增倉位歷史標記 Group ID ---
+const POSITION_HISTORY_GROUP_ID = 'positionHistoryMarkers';
 
 // --- Helper Functions (Chart related) ---
 function getKlineTimestamp(tradeTimestamp, intervalMs) {
@@ -97,9 +100,10 @@ async function fetchAndApplyKlineData(symbol, interval) {
 
         updateStatus(`K線數據加載完成。`, 'success');
 
-        // Apply trade marks if they exist
-        if (window.globalState.allTrades && window.globalState.allTrades.length > 0) {
-            applyTradeMarks(window.globalState.allTrades);
+        // Apply position history marks if checkbox is checked and data exists
+        const checkbox = document.getElementById('showHistoryCheckbox');
+        if (checkbox && checkbox.checked && window.globalState.positionHistoryData && window.globalState.positionHistoryData.length > 0) {
+            applyPositionHistoryMarks(window.globalState.positionHistoryData);
         }
         // Trigger calculation update in trade module if needed
         if (typeof updateCalculations === 'function') {
@@ -108,7 +112,7 @@ async function fetchAndApplyKlineData(symbol, interval) {
 
     } else {
         window.globalState.klineChart.clearData();
-        window.globalState.klineChart.removeOverlay({ groupId: TRADE_MARKER_GROUP_ID });
+        window.globalState.klineChart.removeOverlay({ groupId: POSITION_HISTORY_GROUP_ID }); // 清除倉位歷史標記
         updateStatus(`未獲取到 ${symbol} ${interval} K線數據。`, 'warning');
         window.globalState.currentCandle = null;
         window.globalState.currentMarkPrice = null;
@@ -119,303 +123,111 @@ async function fetchAndApplyKlineData(symbol, interval) {
     }
 }
 
-// --- CSV/XLSX Parsing & Trade Marks ---
-function parseCSV(file) {
-    updateStatus(`正在解析 CSV 文件: ${file.name}...`);
-    Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        dynamicTyping: false, // Keep as strings initially
-        complete: function(results) {
-            console.log("CSV 解析完成:", results);
-            if (results.errors.length > 0) {
-                console.error("CSV 解析錯誤:", results.errors);
-                updateStatus(`解析CSV出錯: ${results.errors[0].message}`, 'error');
-                return;
-            }
-            if (results.data.length === 0) {
-                updateStatus("CSV 文件為空", 'warning');
-                return;
-            }
-            window.globalState.allTrades = results.data; // Store in global state
-            updateStatus(`CSV 解析成功: ${window.globalState.allTrades.length} 筆`, 'success');
-            if (window.globalState.klineChart) applyTradeMarks(window.globalState.allTrades);
-        },
-        error: function(error) {
-            console.error("CSV 解析錯誤:", error);
-            updateStatus(`解析CSV失敗: ${error.message}`, 'error');
-        }
-    });
+// --- 移除 CSV/XLSX 解析和舊的 applyTradeMarks/removeTradeMarks ---
+/*
+function parseCSV(file) { ... } // 移除
+function parseXLSX(file) { ... } // 移除
+function applyTradeMarks(tradesData) { ... } // 移除
+window.applyTradeMarks = applyTradeMarks; // 移除
+function removeTradeMarks() { ... } // 移除
+window.removeTradeMarks = removeTradeMarks; // 移除
+*/
+
+// --- 移除舊的 tradeMarker Overlay 註冊 ---
+/*
+if (typeof klinecharts !== 'undefined') {
+    klinecharts.registerOverlay({ name: 'tradeMarker', ... }); // 移除
 }
+*/
 
-function parseXLSX(file) {
-    updateStatus(`正在解析 XLSX 文件: ${file.name}...`);
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const data = e.target.result;
-            const workbook = XLSX.read(data, { type: 'array' });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            // Convert dates during parsing if possible, or handle in applyTradeMarks
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { cellDates: true }); // Attempt to parse dates
-            console.log("XLSX 解析完成:", jsonData);
-            if (jsonData.length === 0) {
-                updateStatus("XLSX 文件為空", 'warning');
-                return;
-            }
-            window.globalState.allTrades = jsonData; // Store in global state
-            updateStatus(`XLSX 解析成功: ${window.globalState.allTrades.length} 筆`, 'success');
-            if (window.globalState.klineChart) applyTradeMarks(window.globalState.allTrades);
-        } catch (error) {
-            console.error("XLSX 解析錯誤:", error);
-            updateStatus(`解析XLSX失敗: ${error.message}`, 'error');
-        }
-    };
-    reader.onerror = function(ex) {
-        console.error("讀取文件錯誤:", ex);
-        updateStatus("讀取文件失敗", 'error');
-    };
-    reader.readAsArrayBuffer(file);
-}
-
-function applyTradeMarks(tradesData) {
-    if (!window.globalState.klineChart) return;
-
-    const relevantTrades = tradesData.map(row => {
-        // Find keys robustly
-        const dateKey = Object.keys(row).find(key => key.toLowerCase().includes('date') || key.toLowerCase().includes('time'));
-        const sideKey = Object.keys(row).find(key => key.toLowerCase() === 'side');
-        const priceKey = Object.keys(row).find(key => key.toLowerCase() === 'price');
-        const symbolKey = Object.keys(row).find(key => key.toLowerCase() === 'symbol');
-        const qtyKey = Object.keys(row).find(key => ['quantity', 'filled', 'qty', '成交數量'].some(k => key.toLowerCase().includes(k)));
-
-
-        if (!dateKey || !sideKey || !priceKey || !symbolKey || !qtyKey ||
-            row[dateKey] === undefined || row[sideKey] === undefined || row[priceKey] === undefined || row[symbolKey] === undefined || row[qtyKey] === undefined) {
-             console.warn("跳過缺少必要欄位的交易紀錄:", row);
-            return null;
-        }
-
-        // Symbol check
-        if (String(row[symbolKey]).toUpperCase().trim() !== window.globalState.currentSymbol.toUpperCase()) {
-            return null; // Skip trades for other symbols
-        }
-
-        // Date parsing
-        let timestamp;
-        const dateValue = row[dateKey];
-        if (dateValue instanceof Date) {
-            timestamp = dateValue.getTime(); // Already a Date object from XLSX parsing
-        } else if (typeof dateValue === 'number' && dateValue > 10000 && dateValue < 60000) { // Excel date serial number
-            try {
-                // Excel epoch starts Dec 30, 1899 for compatibility reasons
-                const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-                timestamp = excelEpoch.getTime() + dateValue * 86400000; // Add days in milliseconds
-            } catch (dateError) {
-                console.warn(`無法解析 Excel 日期數字: ${dateValue}`, row);
-                timestamp = NaN;
-            }
-        } else if (typeof dateValue === 'number' && dateValue > 1000000000000) { // Check for likely Unix milliseconds timestamp (e.g., > year 2001)
-            timestamp = dateValue; // Directly use the number as timestamp
-        } else { // Attempt string parsing as fallback
-             let dateStr = String(dateValue).trim();
-             // Add 'Z' if no timezone specified, assuming UTC
-             if (!dateStr.includes('Z') && !dateStr.match(/[+-]\d{2}:?\d{2}$/)) {
-                 dateStr = dateStr.replace(' ', 'T') + 'Z';
-             }
-             timestamp = Date.parse(dateStr);
-        }
-
-        if (isNaN(timestamp)) {
-            console.warn(`跳過無效日期: ${row[dateKey]}`, row);
-            return null;
-        }
-
-        // Price parsing
-        const price = parseFloat(String(row[priceKey]).replace(/,/g, '')); // Handle potential commas
-        if (isNaN(price)) {
-            console.warn(`跳過無效價格: ${row[priceKey]}`, row);
-            return null;
-        }
-
-        // Side parsing
-        const side = String(row[sideKey]).toUpperCase().trim();
-        if (side !== 'BUY' && side !== 'SELL') {
-             console.warn(`跳過無效方向: ${row[sideKey]}`, row);
-            return null;
-        }
-
-         // Quantity parsing
-        const quantity = parseFloat(String(row[qtyKey]).replace(/,/g, ''));
-        if (isNaN(quantity)) {
-            console.warn(`跳過無效數量: ${row[qtyKey]}`, row);
-            return null;
-        }
-
-
-        return {
-            timestamp: timestamp,
-            price: price,
-            side: side,
-            quantity: quantity, // Include quantity for potential future use in tooltip
-            originalTrade: row // Keep original for tooltip
-        };
-    }).filter(trade => trade !== null);
-
-    updateStatus(`正在應用 ${relevantTrades.length} 個歷史交易標記...`);
-    window.globalState.klineChart.removeOverlay({ groupId: TRADE_MARKER_GROUP_ID });
-
-    if (relevantTrades.length === 0) {
-        updateStatus(`沒有找到 ${window.globalState.currentSymbol} 的歷史交易。`, 'info');
-        return;
-    }
-
-    const overlayData = relevantTrades.map(trade => ({
-        name: 'tradeMarker',
-        groupId: TRADE_MARKER_GROUP_ID,
-        points: [{ timestamp: trade.timestamp, value: trade.price }],
-        lock: true,
-        extendData: { // Data passed to overlay callbacks
-             side: trade.side,
-             quantity: trade.quantity,
-             originalTrade: trade.originalTrade,
-             timestamp: trade.timestamp // Pass timestamp for tooltip
-        }
-    }));
-
-    if (overlayData.length > 0) {
-        try {
-            window.globalState.klineChart.createOverlay(overlayData);
-            updateStatus(`已應用 ${overlayData.length} 個歷史交易標記。`, 'success');
-        } catch (e) {
-            console.error("創建標記錯誤:", e);
-            updateStatus("創建交易標記失敗", "error");
-        }
-    }
-}
-// --- Make applyTradeMarks globally accessible ---
-window.applyTradeMarks = applyTradeMarks;
-
-// --- Function to remove trade marks ---
-function removeTradeMarks() {
-    if (window.globalState && window.globalState.klineChart) {
-        console.log("Removing trade marks overlay...");
-        window.globalState.klineChart.removeOverlay({ groupId: TRADE_MARKER_GROUP_ID });
-        updateStatus("歷史成交標記已隱藏", 'info');
-    } else {
-        console.warn("Chart not initialized, cannot remove trade marks.");
-    }
-}
-window.removeTradeMarks = removeTradeMarks; // Make it globally accessible
-
-// --- Custom Overlay Definition ---
-// Needs to be registered once, typically in the main script or chart script
-// Ensure klinecharts is available globally
+// --- 新增：註冊 positionHistoryMarker Overlay ---
 if (typeof klinecharts !== 'undefined') {
     klinecharts.registerOverlay({
-        name: 'tradeMarker',
-        totalStep: 1,
+        name: 'positionHistoryMarker',
+        totalStep: 2, // 需要兩個點：開倉和平倉
         lock: true,
-        needDefaultPointFigure: false, // We draw our own figure
-        styles: { // Disable default selection highlighting
-            polygon: { style: 'fill', color: 'transparent', borderColor: 'transparent', borderSize: 0 },
-            circle: { style: 'fill', color: 'transparent', borderColor: 'transparent', borderSize: 0 },
-            rect: { style: 'fill', color: 'transparent', borderColor: 'transparent', borderSize: 0 }
+        needDefaultPointFigure: false, // 我們自定義繪圖
+        needDefaultXAxisFigure: false,
+        needDefaultYAxisFigure: false,
+        styles: { // 禁用默認選擇樣式
+             polygon: { style: 'fill', color: 'transparent', borderColor: 'transparent', borderSize: 0 },
+             circle: { style: 'fill', color: 'transparent', borderColor: 'transparent', borderSize: 0 },
+             rect: { style: 'fill', color: 'transparent', borderColor: 'transparent', borderSize: 0 }
         },
-        // Draw the triangle marker
+        // 繪製開倉箭頭、平倉箭頭和連接線
         createPointFigures: ({ overlay, coordinates, barSpace }) => {
-            if (coordinates.length === 0 || !coordinates[0]) { return []; }
-            const point = coordinates[0];
-            const side = overlay.extendData?.side;
-            if (!side) return [];
+            if (coordinates.length < 2 || !coordinates[0] || !coordinates[1]) { return []; }
+            const figures = [];
+            const openPoint = coordinates[0];
+            const closePoint = coordinates[1];
+            const data = overlay.extendData; // { openSide, pnl, quantity, avgOpenPrice, avgClosePrice, openTime, closeTime, durationMs, commission }
 
-            const triangleHeight = 8;
-            const triangleBaseHalf = 4;
-            const barH = barSpace.bar * 0.5; // Half bar width for centering offset
-            const offset = barH + triangleHeight * 0.7; // Offset from price point
+            if (!data || !data.openSide) return [];
 
-            let color;
-            let points;
+            const arrowHeight = 8;
+            const arrowBaseHalf = 4;
+            const barH = barSpace.bar * 0.5; // 半個 bar 寬度用於偏移
+            // const offset = barH + arrowHeight * 0.7; // 價格點的偏移量 // 移除三角形相關
 
-            if (side === 'BUY') {
-                color = '#FFD700'; // Yellow for buy
-                const yBase = point.y + offset; // Below the price point
-                const yTip = yBase - triangleHeight;
-                points = [
-                    { x: point.x, y: yTip }, // Top point
-                    { x: point.x - triangleBaseHalf, y: yBase }, // Bottom left
-                    { x: point.x + triangleBaseHalf, y: yBase }  // Bottom right
-                ];
-            } else if (side === 'SELL') {
-                color = '#2196F3'; // Blue for sell
-                const yBase = point.y - offset; // Above the price point
-                const yTip = yBase + triangleHeight;
-                points = [
-                    { x: point.x, y: yTip }, // Bottom point
-                    { x: point.x - triangleBaseHalf, y: yBase }, // Top left
-                    { x: point.x + triangleBaseHalf, y: yBase }  // Top right
-                ];
-            } else {
-                return []; // Unknown side
-            }
+            // 1. 繪製開倉箭頭 (已根據用戶回饋移除)
+            // let openArrowColor = data.openSide === 'BUY' ? '#FFD700' : '#2196F3';
+            // let openArrowPoints;
+            // if (data.openSide === 'BUY') { ... } else { ... }
+            // figures.push({ type: 'polygon', attrs: { coordinates: openArrowPoints }, styles: { style: 'fill', color: openArrowColor } });
 
-            return [{
-                type: 'polygon',
-                attrs: { coordinates: points },
-                styles: { style: 'fill', color: color }
-            }];
+            // 2. 繪製平倉箭頭 (已根據用戶回饋移除)
+            // let closeArrowColor = data.openSide === 'BUY' ? '#2196F3' : '#FFD700';
+            // let closeArrowPoints;
+            // if (data.openSide === 'BUY') { ... } else { ... }
+            // figures.push({ type: 'polygon', attrs: { coordinates: closeArrowPoints }, styles: { style: 'fill', color: closeArrowColor } });
+
+            // 3. 只繪製連接線
+            const pnl = parseFloat(data.pnl);
+            const lineColor = isNaN(pnl) ? '#888888' : (pnl >= 0 ? '#26a69a' : '#ef5350'); // 綠色盈利，紅色虧損，灰色未知
+            figures.push({
+                type: 'line',
+                attrs: { coordinates: [{ x: openPoint.x, y: openPoint.y }, { x: closePoint.x, y: closePoint.y }] },
+                styles: { style: 'dashed', color: lineColor, size: 1 }
+            });
+
+            return figures;
         },
-        // Tooltip handling
+        // Tooltip 處理 (當滑鼠懸停在任何繪製的圖形上時觸發)
         onMouseEnter: (event) => {
-            if (tooltipElement && event.overlay?.extendData) {
+             if (tooltipElement && event.overlay?.extendData) {
                 const data = event.overlay.extendData;
-                const trade = data.originalTrade; // Original row data
-                const dateKey = Object.keys(trade).find(key => key.toLowerCase().includes('date') || key.toLowerCase().includes('time'));
+                const pnl = parseFloat(data.pnl);
+                const commission = parseFloat(data.commission);
+                const durationSec = data.durationMs ? (data.durationMs / 1000).toFixed(1) : 'N/A';
 
-                // Format timestamp from extendData
-                let formattedTime = 'N/A';
-                if (data.timestamp) {
-                     try {
-                         formattedTime = new Date(data.timestamp).toLocaleString(); // Use local time format
-                     } catch (e) { console.warn("Error formatting timestamp for tooltip:", data.timestamp); }
-                }
+                let tooltipContent = `方向: ${data.openSide === 'BUY' ? '多單' : '空單'}\n`;
+                tooltipContent += `數量: ${formatNumber(data.quantity, window.globalState?.quantityPrecision ?? 3)}\n`;
+                tooltipContent += `開倉價: ${formatCurrency(data.avgOpenPrice, window.globalState?.pricePrecision ?? 2)}\n`;
+                tooltipContent += `平倉價: ${formatCurrency(data.avgClosePrice, window.globalState?.pricePrecision ?? 2)}\n`;
+                tooltipContent += `開倉時間: ${data.openTime ? new Date(data.openTime).toLocaleString() : 'N/A'}\n`;
+                tooltipContent += `平倉時間: ${data.closeTime ? new Date(data.closeTime).toLocaleString() : 'N/A'}\n`;
+                tooltipContent += `持倉時長: ${durationSec} 秒\n`;
+                tooltipContent += `手續費: ${formatCurrency(commission, 8)} ${data.commissionAsset || ''}\n`; // 顯示更多小數位
+                tooltipContent += `盈虧: <span class="${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)}</span>\n`;
 
-                let tooltipContent = `時間: ${formattedTime}\n`;
-                tooltipContent += `方向: ${data.side || 'N/A'}\n`;
-                tooltipContent += `價格: ${trade.Price || trade.price || 'N/A'}\n`; // Access original price string if needed
-                tooltipContent += `數量: ${data.quantity || 'N/A'}\n`; // Use parsed quantity
-
-                tooltipElement.innerHTML = tooltipContent.replace(/\n/g, '<br>'); // Use <br> for HTML
+                tooltipElement.innerHTML = tooltipContent.replace(/\n/g, '<br>');
                 tooltipElement.style.display = 'block';
 
-                // Position tooltip near cursor
+                // 定位 Tooltip (與 tradeMarker 邏輯相同)
                 const offsetX = 15;
                 const offsetY = 10;
                 const chartRect = chartContainer.getBoundingClientRect();
                 let left = event.pointerCoordinate.x + offsetX + chartRect.left + window.scrollX;
                 let top = event.pointerCoordinate.y + offsetY + chartRect.top + window.scrollY;
-
-                // Adjust if tooltip goes off-screen
                 const tooltipRect = tooltipElement.getBoundingClientRect();
-                // Check right boundary BEFORE checking left, as adjusting left might fix right
                 if (left + tooltipRect.width > window.innerWidth) {
                     left = event.pointerCoordinate.x - tooltipRect.width - offsetX + chartRect.left + window.scrollX;
                 }
-                 // Check bottom boundary BEFORE checking top
                 if (top + tooltipRect.height > window.innerHeight) {
                     top = event.pointerCoordinate.y - tooltipRect.height - offsetY + chartRect.top + window.scrollY;
                 }
-                // Check left boundary
-                if (left < window.scrollX) { // Use window.scrollX for absolute positioning
-                     left = window.scrollX + 5;
-                }
-                 // Check top boundary
-                if (top < window.scrollY) { // Use window.scrollY
-                     top = window.scrollY + 5;
-                }
-
-
+                if (left < window.scrollX) left = window.scrollX + 5;
+                if (top < window.scrollY) top = window.scrollY + 5;
                 tooltipElement.style.left = `${left}px`;
                 tooltipElement.style.top = `${top}px`;
             }
@@ -431,27 +243,97 @@ if (typeof klinecharts !== 'undefined') {
 }
 
 
-// --- Event Listeners (Chart related) ---
-if (fileInput) {
-    fileInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            updateStatus(`已選擇文件: ${file.name}，準備處理...`);
-            const fileName = file.name.toLowerCase();
-            window.globalState.allTrades = []; // Clear previous trades
-            if(window.globalState.klineChart) window.globalState.klineChart.removeOverlay({ groupId: TRADE_MARKER_GROUP_ID });
+// --- 新增：應用倉位歷史標記 ---
+function applyPositionHistoryMarks(positionHistoryData) {
+    if (!window.globalState || !window.globalState.klineChart) {
+        console.warn("圖表未初始化，無法應用倉位歷史標記。");
+        return;
+    }
+    if (!Array.isArray(positionHistoryData)) {
+        console.warn("無效的倉位歷史數據格式。");
+        return;
+    }
 
-            if (fileName.endsWith('.csv')) {
-                parseCSV(file);
-            } else if (fileName.endsWith('.xlsx')) {
-                parseXLSX(file);
-            } else {
-                updateStatus("不支援的文件類型", 'error');
-            }
+    const chart = window.globalState.klineChart;
+    updateStatus(`正在應用 ${positionHistoryData.length} 筆倉位歷史標記...`);
+    chart.removeOverlay({ groupId: POSITION_HISTORY_GROUP_ID }); // 先清除舊的
+
+    if (positionHistoryData.length === 0) {
+        updateStatus("沒有倉位歷史數據可供顯示。", 'info');
+        return;
+    }
+
+    const overlayData = positionHistoryData.map(pos => {
+        // 確保時間和價格有效
+        const openTime = parseInt(pos.openTime);
+        const closeTime = parseInt(pos.closeTime);
+        const openPrice = parseFloat(pos.avgOpenPrice);
+        const closePrice = parseFloat(pos.avgClosePrice);
+
+        if (isNaN(openTime) || isNaN(closeTime) || isNaN(openPrice) || isNaN(closePrice) || openPrice <= 0 || closePrice <= 0) {
+            console.warn("跳過無效的倉位歷史數據:", pos);
+            return null;
         }
-        event.target.value = null; // Reset file input
-    });
+
+        return {
+            name: 'positionHistoryMarker',
+            groupId: POSITION_HISTORY_GROUP_ID,
+            points: [
+                { timestamp: openTime, value: openPrice }, // 開倉點
+                { timestamp: closeTime, value: closePrice } // 平倉點
+            ],
+            lock: true,
+            extendData: { // 傳遞給 overlay 回調的數據
+                openSide: pos.openSide, // 'BUY' or 'SELL'
+                pnl: pos.pnl,
+                quantity: pos.quantity,
+                avgOpenPrice: openPrice,
+                avgClosePrice: closePrice,
+                openTime: openTime,
+                closeTime: closeTime,
+                durationMs: pos.durationMs,
+                commission: pos.commission,
+                commissionAsset: pos.commissionAsset
+                // 可以添加更多需要的數據
+            }
+        };
+    }).filter(data => data !== null); // 過濾掉無效數據
+
+    if (overlayData.length > 0) {
+        try {
+            chart.createOverlay(overlayData);
+            updateStatus(`已應用 ${overlayData.length} 筆倉位歷史標記。`, 'success');
+        } catch (e) {
+            console.error("創建倉位歷史標記 Overlay 失敗:", e);
+            updateStatus("創建倉位歷史標記失敗", "error");
+        }
+    } else {
+         updateStatus("沒有有效的倉位歷史數據可供顯示。", 'info');
+    }
 }
+// 將新函數掛載到 window
+window.applyPositionHistoryMarks = applyPositionHistoryMarks;
+
+// --- 新增：移除倉位歷史標記 ---
+function removePositionHistoryMarks() {
+    if (window.globalState && window.globalState.klineChart) {
+        console.log("Removing position history marks overlay...");
+        window.globalState.klineChart.removeOverlay({ groupId: POSITION_HISTORY_GROUP_ID });
+        updateStatus("倉位歷史標記已隱藏", 'info');
+    } else {
+        console.warn("Chart not initialized, cannot remove position history marks.");
+    }
+}
+// 將新函數掛載到 window
+window.removePositionHistoryMarks = removePositionHistoryMarks;
+
+
+// --- 移除舊的 Event Listeners (Chart related) ---
+/*
+if (fileInput) {
+    fileInput.addEventListener('change', (event) => { ... }); // 移除
+}
+*/
 
 if (intervalButtons) {
     intervalButtons.forEach(button => {
@@ -466,7 +348,13 @@ if (intervalButtons) {
                 updateStatus(`正在切換時間間隔至 ${window.globalState.currentInterval}...`);
                 if(window.globalState.klineChart) {
                     // Trigger data fetch which is now in this module
-                    fetchAndApplyKlineData(window.globalState.currentSymbol, window.globalState.currentInterval);
+                    fetchAndApplyKlineData(window.globalState.currentSymbol, window.globalState.currentInterval).then(() => {
+                        // *** 數據加載後重新應用倉位歷史標記 ***
+                        const checkbox = document.getElementById('showHistoryCheckbox');
+                        if (checkbox && checkbox.checked && window.globalState.positionHistoryData) {
+                             applyPositionHistoryMarks(window.globalState.positionHistoryData);
+                        }
+                    });
                 }
                  // Potentially notify market.js if it needs to resubscribe or adjust based on interval
                  // if (typeof handleIntervalChange === 'function') handleIntervalChange(newInterval);
@@ -607,3 +495,16 @@ function updateTpSlLines(tpPriceStr, slPriceStr) {
 
 // 將新函數掛載到 window
 window.updateTpSlLines = updateTpSlLines;
+
+// --- 確保 formatNumber 和 formatCurrency 可用 ---
+// 如果它們沒有在 script.js 中全局定義，需要在此處定義或從 trade.js 導入/複製
+function formatCurrency(value, decimals = 2) {
+    const prec = window.globalState?.pricePrecision ?? decimals;
+    const num = parseFloat(value);
+    return (isNaN(num) || num === 0) ? '未設定' : num.toFixed(prec);
+}
+function formatNumber(value, decimals = 3) {
+    const prec = window.globalState?.quantityPrecision ?? decimals;
+    const num = parseFloat(value);
+    return isNaN(num) ? '-.---' : num.toFixed(prec);
+}

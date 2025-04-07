@@ -8,7 +8,8 @@ window.globalState = {
     backendWs: null,
     klineChart: null,
     allTrades: [], // For historical trade markers (from file upload)
-    binanceTradeHistory: [], // For historical trades loaded from Binance API
+    // binanceTradeHistory: [], // For historical trades loaded from Binance API // <--- 移除舊的
+    positionHistoryData: [], // <--- 新增：用於儲存倉位歷史數據
     positionInfo: null, // Current position data from backend
     usdtBalance: 0,
     currentLeverage: 10, // Default leverage
@@ -105,33 +106,34 @@ function getIntervalMillis(interval) {
     }
 }
 
-// --- Function to load initial trade history ---
-async function loadInitialBinanceTradeHistory() {
-    console.log("嘗試載入初始幣安歷史成交紀錄...");
-    updateStatus("正在載入歷史成交紀錄...", 'info');
+// --- Function to load initial position history --- // <--- 修改函數名和註釋
+async function loadInitialPositionHistory() { // <--- 修改函數名
+    console.log("嘗試載入初始倉位歷史紀錄..."); // <--- 修改日誌
+    updateStatus("正在載入倉位歷史紀錄...", 'info'); // <--- 修改狀態
 
-    const historyData = await fetchFromBackend('/trades/history?symbol=BTCUSDT'); // Assuming backend endpoint
+    // *** 修改 API 端點 ***
+    const historyData = await fetchFromBackend('/position-history?symbol=' + window.globalState.currentSymbol); // 使用新端點，並傳遞 symbol
 
-    // Store the fetched data regardless of whether the function exists yet
-    window.globalState.binanceTradeHistory = historyData || [];
+    // *** 修改儲存變數 ***
+    window.globalState.positionHistoryData = historyData || []; // <--- 使用新的全局變數
 
     if (historyData && Array.isArray(historyData) && historyData.length > 0) {
-        console.log(`從後端收到 ${window.globalState.binanceTradeHistory.length} 筆歷史成交紀錄`);
-        // *** Corrected function name ***
-        if (typeof window.applyTradeMarks === 'function') {
+        console.log(`從後端收到 ${window.globalState.positionHistoryData.length} 筆倉位歷史紀錄`); // <--- 修改日誌和變數
+        // *** 修改調用的圖表函數名 ***
+        if (typeof window.applyPositionHistoryMarks === 'function') { // <--- 調用新的圖表函數
             // Apply marks initially since checkbox is checked by default
-            window.applyTradeMarks(window.globalState.binanceTradeHistory);
-            updateStatus("歷史成交紀錄已載入", 'success');
+            window.applyPositionHistoryMarks(window.globalState.positionHistoryData); // <--- 傳遞新的數據
+            updateStatus("倉位歷史紀錄已載入", 'success'); // <--- 修改狀態
         } else {
-            console.error("window.applyTradeMarks function not found (ensure it's exposed globally in chart.js)");
-            updateStatus("無法在圖表上顯示歷史成交", 'warning');
+            console.error("window.applyPositionHistoryMarks function not found (ensure it's exposed globally in chart.js)");
+            updateStatus("無法在圖表上顯示倉位歷史", 'warning'); // <--- 修改狀態
         }
     } else if (historyData) { // Received response, but maybe empty array or non-array
-         console.log("後端未返回有效的歷史成交紀錄");
-         updateStatus("未找到歷史成交紀錄", 'info');
+         console.log("後端未返回有效的倉位歷史紀錄"); // <--- 修改日誌
+         updateStatus("未找到倉位歷史紀錄", 'info'); // <--- 修改狀態
     } else { // fetchFromBackend returned null (error occurred)
         // Status already updated by fetchFromBackend
-        console.error("獲取歷史成交紀錄失敗");
+        console.error("獲取倉位歷史紀錄失敗"); // <--- 修改日誌
         // No need to update status again, fetchFromBackend handles errors
     }
 }
@@ -195,27 +197,50 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeApp().then(() => { // Wait for initializeApp to potentially finish async ops
         // Load initial history data (since checkbox is checked by default)
         // Use setTimeout to ensure chart and other modules are fully ready
-        setTimeout(loadInitialBinanceTradeHistory, 500); // Delay slightly
+        setTimeout(loadInitialPositionHistory, 500); // <--- 調用新的加載函數
 
         // Add change listener for the checkbox
         const showHistoryCheckbox = document.getElementById('showHistoryCheckbox');
+        const showHistoryLabel = document.querySelector('label[for="showHistoryCheckbox"]'); // 獲取 label
+        // *** 修改 Checkbox Label ***
+        if (showHistoryLabel) {
+            // 使用 textContent 來獲取並修改文字節點
+            let labelTextNode = null;
+            for (const node of showHistoryLabel.childNodes) {
+                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                    labelTextNode = node;
+                    break;
+                }
+            }
+            if (labelTextNode) {
+                labelTextNode.textContent = ' 顯示倉位歷史紀錄'; // 更新文字
+            } else {
+                 // 如果找不到文本節點，作為後備方案直接設置 textContent (可能會移除 input)
+                 // showHistoryLabel.textContent = ' 顯示倉位歷史紀錄'; // 不建議
+                 console.warn("無法精確修改歷史紀錄 checkbox 的 label 文字");
+            }
+        }
+
+
         if (showHistoryCheckbox) {
             showHistoryCheckbox.addEventListener('change', (event) => {
                 if (event.target.checked) {
                     // Show markers using stored data
-                    if (typeof window.applyTradeMarks === 'function') {
-                        console.log("Checkbox checked: Applying trade marks...");
-                        window.applyTradeMarks(window.globalState.binanceTradeHistory);
+                    // *** 修改調用的圖表函數名 ***
+                    if (typeof window.applyPositionHistoryMarks === 'function') { // <--- 調用新的圖表函數
+                        console.log("Checkbox checked: Applying position history marks...");
+                        window.applyPositionHistoryMarks(window.globalState.positionHistoryData); // <--- 傳遞新的數據
                     } else {
-                        console.error("window.applyTradeMarks function not found.");
+                        console.error("window.applyPositionHistoryMarks function not found.");
                     }
                 } else {
                     // Hide markers
-                    if (typeof window.removeTradeMarks === 'function') {
-                         console.log("Checkbox unchecked: Removing trade marks...");
-                        window.removeTradeMarks();
+                    // *** 修改調用的圖表函數名 ***
+                    if (typeof window.removePositionHistoryMarks === 'function') { // <--- 調用新的圖表函數
+                         console.log("Checkbox unchecked: Removing position history marks...");
+                        window.removePositionHistoryMarks();
                     } else {
-                        console.error("window.removeTradeMarks function not found.");
+                        console.error("window.removePositionHistoryMarks function not found.");
                     }
                 }
             });
