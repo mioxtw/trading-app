@@ -140,23 +140,23 @@ function updateAccountPanel(balanceData, positionRiskData) {
                     <div class="panel-row"><label>槓桿</label><span class="value">${leverage}x</span></div>
                     <div class="panel-row">
                         <label>止盈價 (USDT)</label>
-                        <span class="value editable-price"
+                        ${createPnlInfoHtml(takeProfitPrice, entryPrice, posAmt, estimatedMargin)} <span class="value editable-price"
                               data-type="tp"
                               data-symbol="${currentPosition.symbol}"
                               data-entry-price="${entryPrice}"
-                              data-pos-amt="${posAmt}">
-                              ${formatCurrency(takeProfitPrice, window.globalState.pricePrecision)}
-                        </span>
+                              data-pos-amt="${posAmt}"
+                              data-margin="${estimatedMargin}"
+                              data-leverage="${leverage}">${formatCurrency(takeProfitPrice, window.globalState.pricePrecision)}</span>
                     </div>
                     <div class="panel-row">
                         <label>止損價 (USDT)</label>
-                        <span class="value editable-price"
+                        ${createPnlInfoHtml(stopLossPrice, entryPrice, posAmt, estimatedMargin)} <span class="value editable-price"
                               data-type="sl"
                               data-symbol="${currentPosition.symbol}"
                               data-entry-price="${entryPrice}"
-                              data-pos-amt="${posAmt}">
-                              ${formatCurrency(stopLossPrice, window.globalState.pricePrecision)}
-                        </span>
+                              data-pos-amt="${posAmt}"
+                              data-margin="${estimatedMargin}"
+                              data-leverage="${leverage}">${formatCurrency(stopLossPrice, window.globalState.pricePrecision)}</span>
                     </div>
                 `;
                 // *** 新增：更新圖表上的持倉線 ***
@@ -409,6 +409,32 @@ async function handleClosePosition(closeFraction) {
     }
 }
 
+// --- Helper Function for PNL Info ---
+function createPnlInfoHtml(targetPrice, entryPrice, posAmt, margin) {
+    // Ensure targetPrice is a valid number greater than 0 for calculation
+    const priceNum = parseFloat(targetPrice);
+    if (isNaN(priceNum) || priceNum <= 0 || isNaN(entryPrice) || isNaN(posAmt) || posAmt === 0 || isNaN(margin) || margin <= 0) {
+        return ''; // Cannot calculate if price is invalid, 0, or other data is missing
+    }
+
+    // Basic logical validation (simplified for display context)
+    // We calculate PNL regardless of whether it's a "valid" TP/SL relative to entry,
+    // as the display should reflect the PNL *at that price*.
+    // The actual order placement logic handles the strict validation.
+
+    const profitAmount = (priceNum - entryPrice) * posAmt;
+    const pnlPercent = (profitAmount / margin) * 100;
+
+    // Use formatCurrency for consistency, handling potential NaN/0 from calculation itself if needed
+    const formattedAmount = `${profitAmount >= 0 ? '+' : ''}${formatCurrency(profitAmount)}`;
+    const formattedPercent = `${pnlPercent >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%`; // Use formatCurrency for percentage too
+    const pnlClass = profitAmount >= 0 ? 'positive' : 'negative';
+
+    // Add a specific class for easier selection/removal
+    return ` <span class="price-pnl-info static-pnl-info ${pnlClass}">(${formattedAmount} / ${formattedPercent})</span>`;
+}
+
+
 // --- Editable Prices (TP/SL) ---
 function makePriceEditable(spanElement) {
     if (!spanElement || !spanElement.parentNode || !window.globalState) return;
@@ -423,6 +449,16 @@ function makePriceEditable(spanElement) {
     const symbol = spanElement.dataset.symbol;
     const entryPrice = parseFloat(spanElement.dataset.entryPrice);
     const posAmt = parseFloat(spanElement.dataset.posAmt);
+    const margin = parseFloat(spanElement.dataset.margin); // 從 data 屬性獲取保證金
+    // const leverage = parseInt(spanElement.dataset.leverage); // 槓桿暫時不用，因為保證金已提供
+
+    // Create info span element (for PNL display)
+    const infoSpan = document.createElement('span');
+    // Add a class to distinguish temporary info span from static one
+    infoSpan.className = 'editable-price-info temporary-pnl-info';
+    infoSpan.style.marginRight = '5px'; // Add some space
+    infoSpan.style.fontSize = '0.9em';
+    infoSpan.style.color = '#888'; // Lighter color
 
     // Create input element
     const input = document.createElement('input');
@@ -434,24 +470,88 @@ function makePriceEditable(spanElement) {
     input.style.width = '80px';
     input.placeholder = "輸入價格";
 
-    // Replace span with input
-    spanElement.style.display = 'none'; // Hide span
-    spanElement.parentNode.insertBefore(input, spanElement.nextSibling); // Insert input after span
+    // Hide original span and any static PNL info before it
+    spanElement.style.display = 'none';
+    const staticPnlInfo = spanElement.previousElementSibling;
+    if (staticPnlInfo && staticPnlInfo.classList.contains('static-pnl-info')) {
+        staticPnlInfo.style.display = 'none';
+    }
+
+    // Insert temporary infoSpan and input before the hidden original span
+    // infoSpan goes first, then input, both before the original spanElement
+    spanElement.parentNode.insertBefore(infoSpan, spanElement);
+    spanElement.parentNode.insertBefore(input, infoSpan.nextSibling); // Input goes *after* the temporary info span
     input.focus();
     input.select();
+
+    // --- Function to calculate and display PNL ---
+    const updatePnlInfo = () => {
+        const newPriceStr = input.value.trim();
+        const newPriceNum = parseFloat(newPriceStr);
+        infoSpan.textContent = ''; // Clear previous info
+
+        if (isNaN(newPriceNum) || newPriceNum <= 0 || isNaN(entryPrice) || isNaN(posAmt) || posAmt === 0 || isNaN(margin) || margin <= 0) {
+            return; // Not enough data or invalid input
+        }
+
+        // Basic logical validation (same as in handleInputComplete)
+        let validationError = null;
+        if (posAmt > 0) { // Long
+            if (type === 'tp' && newPriceNum <= entryPrice) validationError = "低於開倉";
+            else if (type === 'sl' && newPriceNum >= entryPrice) validationError = "高於開倉";
+        } else { // Short
+            if (type === 'tp' && newPriceNum >= entryPrice) validationError = "高於開倉";
+            else if (type === 'sl' && newPriceNum <= entryPrice) validationError = "低於開倉";
+        }
+
+        if (validationError) {
+            infoSpan.textContent = `(${validationError})`;
+            infoSpan.style.color = 'orange';
+            return;
+        }
+
+        const profitAmount = (newPriceNum - entryPrice) * posAmt;
+        const pnlPercent = (profitAmount / margin) * 100;
+
+        const formattedAmount = `${profitAmount >= 0 ? '+' : ''}${formatCurrency(profitAmount)}`;
+        const formattedPercent = `${pnlPercent >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%`;
+
+        infoSpan.textContent = `(${formattedAmount} / ${formattedPercent})`;
+        infoSpan.style.color = profitAmount >= 0 ? 'var(--profit-color)' : 'var(--loss-color)';
+    };
+
+    // Initial PNL calculation for the current value (if any)
+    updatePnlInfo();
+
+    // Add input event listener
+    input.addEventListener('input', updatePnlInfo);
 
     // --- Input Event Handlers ---
     const handleInputComplete = async (eventTrigger) => {
         // Remove listeners to prevent multiple triggers
         input.removeEventListener('blur', handleBlur);
         input.removeEventListener('keydown', handleKeydown);
+        input.removeEventListener('input', updatePnlInfo); // Remove input listener
 
         const newPriceStr = input.value.trim();
-        if (document.body.contains(input)) { // Remove input only if it still exists
+        // Remove temporary infoSpan and input
+        const tempInfoSpan = input.previousElementSibling; // infoSpan is before input
+        if (tempInfoSpan && tempInfoSpan.classList.contains('temporary-pnl-info')) {
+             if (document.body.contains(tempInfoSpan)) tempInfoSpan.remove();
+        }
+        if (document.body.contains(input)) { // Remove input
              input.remove();
         }
-        if (document.body.contains(spanElement)) { // Show span only if it still exists
+
+        // Make original span visible again
+        if (document.body.contains(spanElement)) {
             spanElement.style.display = '';
+        }
+        // Make original static PNL (if exists and was hidden) visible again
+        // It will be removed/updated in the next step if necessary.
+        const originalStaticPnl = spanElement.previousElementSibling;
+        if (originalStaticPnl && originalStaticPnl.classList.contains('static-pnl-info')) {
+             originalStaticPnl.style.display = '';
         }
 
 
@@ -506,21 +606,45 @@ function makePriceEditable(spanElement) {
              return;
         }
 
-        // --- Optimistic UI Update & API Call ---
-        const formattedDisplayPrice = formatCurrency(priceToSend, window.globalState.pricePrecision);
-         if (document.body.contains(spanElement)) spanElement.textContent = formattedDisplayPrice; // Update display
+        // --- Remove potential old static PNL info *before* the span ---
+        const existingStaticPnlInfo = spanElement.previousElementSibling;
+        if (existingStaticPnlInfo && existingStaticPnlInfo.classList.contains('static-pnl-info')) {
+            if (document.body.contains(existingStaticPnlInfo)) existingStaticPnlInfo.remove();
+        }
 
+        // --- API Call ---
         const actionText = priceToSend === 0 ? '取消' : '設定';
-        updateStatus(`正在${actionText} ${symbol} ${type.toUpperCase()} 價格為 ${formattedDisplayPrice}...`, 'info');
+        const displayPriceForStatus = formatCurrency(priceToSend, window.globalState.pricePrecision); // Use formatted for status message
+        updateStatus(`正在${actionText} ${symbol} ${type.toUpperCase()} 價格${priceToSend === 0 ? '' : '為 ' + displayPriceForStatus}...`, 'info');
 
         const success = await setStopOrder(symbol, type, priceToSend.toFixed(window.globalState.pricePrecision));
 
-        if (success) {
-            updateStatus(`${symbol} ${type.toUpperCase()} 價格已${actionText}${priceToSend === 0 ? '' : '為 ' + formattedDisplayPrice}`, 'success');
-            // Backend should push update via WebSocket, triggering fetchInitialData
+        // --- Final UI Update ---
+        if (document.body.contains(spanElement)) { // Check if span still exists
+            if (success) {
+                const finalDisplayPrice = formatCurrency(priceToSend, window.globalState.pricePrecision);
+                spanElement.textContent = finalDisplayPrice; // Update main price display
+
+                // Add the new static PNL info span *before* the price span if setting a price (priceToSend > 0)
+                const pnlHtml = createPnlInfoHtml(priceToSend, entryPrice, posAmt, margin);
+                if (pnlHtml) { // Only insert if calculation was possible
+                     spanElement.insertAdjacentHTML('beforebegin', pnlHtml);
+                }
+
+                updateStatus(`${symbol} ${type.toUpperCase()} 價格已${actionText}${priceToSend === 0 ? '' : '為 ' + finalDisplayPrice}`, 'success');
+            } else {
+                // Revert on failure: Set price text back
+                spanElement.textContent = currentPriceText;
+                // Re-add original static PNL info *before* the price span if it existed and was valid
+                const originalPriceNum = parseFloat(currentPriceText.replace(/,/g, ''));
+                const originalPnlHtml = createPnlInfoHtml(originalPriceNum, entryPrice, posAmt, margin);
+                 if (originalPnlHtml) {
+                    spanElement.insertAdjacentHTML('beforebegin', originalPnlHtml);
+                 }
+                updateStatus(`${actionText} ${symbol} ${type.toUpperCase()} 價格失敗，恢復原價`, 'error');
+            }
         } else {
-            updateStatus(`${actionText} ${symbol} ${type.toUpperCase()} 價格失敗，恢復原價`, 'error');
-             if (document.body.contains(spanElement)) spanElement.textContent = currentPriceText; // Revert display on failure
+             console.warn("Editable price span no longer exists in DOM after API call.");
         }
     };
 
@@ -541,10 +665,27 @@ function makePriceEditable(spanElement) {
             // Cancel edit
             input.removeEventListener('blur', handleBlur);
             input.removeEventListener('keydown', handleKeydown);
-            if (document.body.contains(input)) input.remove();
+            input.removeEventListener('input', updatePnlInfo); // Remove input listener
+
+            // Remove temporary infoSpan and input
+            const tempInfoSpan = input.previousElementSibling; // infoSpan is before input
+             if (tempInfoSpan && tempInfoSpan.classList.contains('temporary-pnl-info')) {
+                 if (document.body.contains(tempInfoSpan)) tempInfoSpan.remove();
+            }
+            if (document.body.contains(input)) {
+                 input.remove();
+            }
+
+            // Restore original display
             if (document.body.contains(spanElement)) {
-                 spanElement.style.display = '';
-                 spanElement.textContent = currentPriceText; // Revert text
+                 spanElement.style.display = ''; // Show price span
+                 spanElement.textContent = currentPriceText; // Revert price text
+
+                 // Show original static PNL info if it existed (before the price span)
+                 const staticPnlInfo = spanElement.previousElementSibling;
+                 if (staticPnlInfo && staticPnlInfo.classList.contains('static-pnl-info')) {
+                    staticPnlInfo.style.display = ''; // Make sure it's visible again
+                 }
             }
             console.log("用戶取消設定。");
         }
