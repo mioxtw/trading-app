@@ -7,7 +7,7 @@ window.globalState = {
     intervalMillis: 3600000, // Default to 1h
     backendWs: null,
     klineChart: null,
-    allTrades: [], // For historical trade markers (from file upload)
+    // allTrades: [], // Removed: Was for historical trade markers (from file upload)
     // binanceTradeHistory: [], // For historical trades loaded from Binance API // <--- 移除舊的
     positionHistoryData: [], // <--- 新增：用於儲存倉位歷史數據
     positionInfo: null, // Current position data from backend
@@ -202,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add change listener for the checkbox
         const showHistoryCheckbox = document.getElementById('showHistoryCheckbox');
         const showHistoryLabel = document.querySelector('label[for="showHistoryCheckbox"]'); // 獲取 label
-        // *** 修改 Checkbox Label ***
+        // *** 修改 Checkbox Label (確保文字正確) ***
         if (showHistoryLabel) {
             // 使用 textContent 來獲取並修改文字節點
             let labelTextNode = null;
@@ -213,10 +213,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             if (labelTextNode) {
-                labelTextNode.textContent = ' 顯示倉位歷史紀錄'; // 更新文字
+                labelTextNode.textContent = ' 顯示倉位歷史紀錄'; // 確保文字是倉位歷史
             } else {
-                 // 如果找不到文本節點，作為後備方案直接設置 textContent (可能會移除 input)
-                 // showHistoryLabel.textContent = ' 顯示倉位歷史紀錄'; // 不建議
                  console.warn("無法精確修改歷史紀錄 checkbox 的 label 文字");
             }
         }

@@ -2,15 +2,14 @@
 
 // --- DOM Elements (Chart related) ---
 const chartContainer = document.getElementById('chart-container');
-// const fileInput = document.getElementById('fileInputControl'); // 不再需要
+// fileInput element removed from HTML
 const intervalButtons = document.querySelectorAll('.interval-btn'); // For interval change
 const tooltipElement = document.getElementById('trade-tooltip'); // For trade mark tooltip
 
 // --- Chart State Variables (subset of original state) ---
 // Assuming window.globalState is defined in the main script.js
 // window.globalState.klineChart = null; // Managed within initChart
-// window.globalState.allTrades = []; // 不再需要
-// const TRADE_MARKER_GROUP_ID = 'tradeMarkers'; // 不再需要
+// Removed state and constants related to file upload trade markers
 
 // --- 新增倉位歷史標記 Group ID ---
 const POSITION_HISTORY_GROUP_ID = 'positionHistoryMarkers';
@@ -123,22 +122,9 @@ async function fetchAndApplyKlineData(symbol, interval) {
     }
 }
 
-// --- 移除 CSV/XLSX 解析和舊的 applyTradeMarks/removeTradeMarks ---
-/*
-function parseCSV(file) { ... } // 移除
-function parseXLSX(file) { ... } // 移除
-function applyTradeMarks(tradesData) { ... } // 移除
-window.applyTradeMarks = applyTradeMarks; // 移除
-function removeTradeMarks() { ... } // 移除
-window.removeTradeMarks = removeTradeMarks; // 移除
-*/
+// Removed functions related to CSV/XLSX parsing and old trade markers
 
-// --- 移除舊的 tradeMarker Overlay 註冊 ---
-/*
-if (typeof klinecharts !== 'undefined') {
-    klinecharts.registerOverlay({ name: 'tradeMarker', ... }); // 移除
-}
-*/
+// Removed registration for the old 'tradeMarker' overlay
 
 // --- 新增：註冊 positionHistoryMarker Overlay ---
 if (typeof klinecharts !== 'undefined') {
@@ -328,12 +314,7 @@ function removePositionHistoryMarks() {
 window.removePositionHistoryMarks = removePositionHistoryMarks;
 
 
-// --- 移除舊的 Event Listeners (Chart related) ---
-/*
-if (fileInput) {
-    fileInput.addEventListener('change', (event) => { ... }); // 移除
-}
-*/
+// Removed event listener for the file input element
 
 if (intervalButtons) {
     intervalButtons.forEach(button => {
