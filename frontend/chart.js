@@ -461,3 +461,134 @@ if (intervalButtons) {
 }
 
 console.log("chart.js loaded");
+
+// --- 持倉線繪製 ---
+const POSITION_LINE_OVERLAY_ID = 'positionEntryLine';
+const TAKE_PROFIT_LINE_ID = 'takeProfitLine';
+const STOP_LOSS_LINE_ID = 'stopLossLine';
+
+function updatePositionLine(entryPrice, positionSide) {
+    if (!window.globalState || !window.globalState.klineChart) {
+        console.warn("圖表尚未初始化，無法更新持倉線。");
+        return;
+    }
+
+    const chart = window.globalState.klineChart;
+
+    // 清除舊的持倉線 (如果存在)
+    // 使用 removeOverlay(id) 而不是 groupId
+    chart.removeOverlay(POSITION_LINE_OVERLAY_ID);
+
+    // 如果沒有有效的進場價或持倉方向，則不繪製新線
+    const price = parseFloat(entryPrice);
+    if (isNaN(price) || price <= 0 || !positionSide) {
+        console.log("清除持倉線。");
+        return;
+    }
+
+    console.log(`繪製/更新持倉線: 價格 ${price}`); // 不再需要方向來決定顏色
+
+    const lineColor = '#2196F3'; // *** 改為藍色 ***
+
+    try {
+        chart.createOverlay({
+            id: POSITION_LINE_OVERLAY_ID, // 使用 ID 來唯一標識
+            name: 'priceLine',
+            lock: true, // 鎖定線條，不可拖動
+            points: [{ value: price }], // 設定價格線的值
+            styles: {
+                line: {
+                    style: 'dashed', // 虛線樣式
+                    color: lineColor,
+                    size: 1
+                },
+                text: { // 自訂價格標籤樣式
+                    color: '#FFFFFF', // 白色文字
+                    borderColor: lineColor, // 邊框顏色同線條
+                    backgroundColor: lineColor, // 背景顏色同線條
+                    size: 10, // 字體大小
+                    family: 'Helvetica Neue', // 字體
+                    marginLeft: 5, // 標籤左邊距
+                    marginTop: 2, // 標籤上邊距
+                    paddingLeft: 4, // 內邊距
+                    paddingTop: 2,
+                    paddingRight: 4,
+                    paddingBottom: 2
+                }
+            }
+        });
+    } catch (e) {
+        console.error("創建持倉線 Overlay 失敗:", e);
+    }
+}
+
+// 將函數掛載到 window 使其全局可用
+window.updatePositionLine = updatePositionLine;
+
+// --- 止盈止損線繪製 ---
+function updateTpSlLines(tpPriceStr, slPriceStr) {
+    if (!window.globalState || !window.globalState.klineChart) {
+        console.warn("圖表尚未初始化，無法更新止盈止損線。");
+        return;
+    }
+    const chart = window.globalState.klineChart;
+    const tpPrice = parseFloat(tpPriceStr);
+    const slPrice = parseFloat(slPriceStr);
+
+    // --- 處理止盈線 ---
+    chart.removeOverlay(TAKE_PROFIT_LINE_ID); // 先移除舊線
+    if (!isNaN(tpPrice) && tpPrice > 0) {
+        console.log(`繪製/更新止盈線: 價格 ${tpPrice}`);
+        try {
+            chart.createOverlay({
+                id: TAKE_PROFIT_LINE_ID,
+                name: 'priceLine',
+                lock: true,
+                points: [{ value: tpPrice }],
+                styles: {
+                    line: { style: 'dotted', color: '#26a69a', size: 1 }, // *** 改為綠色點線 ***
+                    text: {
+                        color: '#FFFFFF',
+                        borderColor: '#26a69a', // *** 改為綠色 ***
+                        backgroundColor: '#26a69a', // *** 改為綠色 ***
+                        size: 10, family: 'Helvetica Neue',
+                        marginLeft: 5, marginTop: 2,
+                        paddingLeft: 4, paddingTop: 2, paddingRight: 4, paddingBottom: 2
+                    }
+                }
+            });
+        } catch (e) { console.error("創建止盈線 Overlay 失敗:", e); }
+    } else {
+        console.log("清除止盈線。");
+    }
+
+    // --- 處理止損線 ---
+    chart.removeOverlay(STOP_LOSS_LINE_ID); // 先移除舊線
+    if (!isNaN(slPrice) && slPrice > 0) {
+        console.log(`繪製/更新止損線: 價格 ${slPrice}`);
+        try {
+            chart.createOverlay({
+                id: STOP_LOSS_LINE_ID,
+                name: 'priceLine',
+                lock: true,
+                points: [{ value: slPrice }],
+                styles: {
+                    line: { style: 'dotted', color: '#ef5350', size: 1 }, // *** 改為紅色點線 ***
+                    text: {
+                        color: '#FFFFFF',
+                        borderColor: '#ef5350', // *** 改為紅色 ***
+                        backgroundColor: '#ef5350', // *** 改為紅色 ***
+                        size: 10, family: 'Helvetica Neue',
+                        marginLeft: 5, marginTop: 2,
+                        paddingLeft: 4, paddingTop: 2, paddingRight: 4, paddingBottom: 2
+                    }
+                }
+            });
+        } catch (e) { console.error("創建止損線 Overlay 失敗:", e); }
+    } else {
+         console.log("清除止損線。");
+    }
+}
+
+// 將新函數掛載到 window
+window.updateTpSlLines = updateTpSlLines;

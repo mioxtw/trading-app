@@ -159,6 +159,21 @@ function updateAccountPanel(balanceData, positionRiskData) {
                         </span>
                     </div>
                 `;
+                // *** 新增：更新圖表上的持倉線 ***
+                const positionSide = posAmt > 0 ? 'long' : 'short';
+                // *** 更新圖表上的持倉線 ***
+                // 移除重複宣告，positionSide 已在上方定義
+                if (typeof window.updatePositionLine === 'function') {
+                    window.updatePositionLine(entryPrice, positionSide);
+                }
+                // *** 新增：更新圖表上的止盈止損線 ***
+                if (typeof window.updateTpSlLines === 'function') {
+                    const tp = currentPosition.takeProfitPrice;
+                    const sl = currentPosition.stopLossPrice;
+                    console.log(`[trade.js] updateAccountPanel: 找到持倉，準備更新 TP/SL 線。 TP=${tp}, SL=${sl}`); // <--- 加入日誌
+                    window.updateTpSlLines(tp, sl);
+                }
+                // ******************************
             }
         }
     }
@@ -173,6 +188,16 @@ function updateAccountPanel(balanceData, positionRiskData) {
         window.globalState.positionInfo = positionRiskData;
         if (positionCountSpan) positionCountSpan.textContent = '0';
         if (positionDetailsDiv) positionDetailsDiv.innerHTML = '<div class="no-position">沒有持倉</div>';
+        // *** 新增：清除圖表上的持倉線 ***
+        // *** 清除圖表上的持倉線 ***
+        if (typeof window.updatePositionLine === 'function') {
+            window.updatePositionLine(null, null);
+        }
+        // *** 新增：清除圖表上的止盈止損線 ***
+        if (typeof window.updateTpSlLines === 'function') {
+            window.updateTpSlLines(null, null);
+        }
+        // ******************************
     }
 
     updateCalculations(); // Update margin/max size calculations
@@ -638,7 +663,15 @@ async function setStopOrder(symbol, type, price) { // Function name kept for com
 function attachTradeEventListeners() {
     if (setLeverageBtn) setLeverageBtn.addEventListener('click', handleChangeLeverage);
     if (leverageInput) leverageInput.addEventListener('change', updateCalculations); // Update calc on change
-    if (quantityInput) quantityInput.addEventListener('input', updateCalculations); // Update calc on input
+    if (quantityInput) {
+        quantityInput.addEventListener('input', () => {
+            // 檢查輸入值是否小於 0
+            if (parseFloat(quantityInput.value) < 0) {
+                quantityInput.value = '0'; // 如果是負數，重置為 0
+            }
+            updateCalculations(); // 觸發保證金等計算更新
+        });
+    }
     if (buyLongBtn) buyLongBtn.addEventListener('click', () => placeMarketOrder('BUY'));
     if (sellShortBtn) sellShortBtn.addEventListener('click', () => placeMarketOrder('SELL'));
     if (closeAllBtn) closeAllBtn.addEventListener('click', () => handleClosePosition(1));
