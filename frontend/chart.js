@@ -199,22 +199,27 @@ if (typeof klinecharts !== 'undefined') {
                 tooltipElement.style.display = 'block';
 
                 // 定位 Tooltip (與 tradeMarker 邏輯相同)
-                const offsetX = 15;
-                const offsetY = 10;
-                const chartRect = chartContainer.getBoundingClientRect();
-                let left = event.pointerCoordinate.x + offsetX + chartRect.left + window.scrollX;
-                let top = event.pointerCoordinate.y + offsetY + chartRect.top + window.scrollY;
-                const tooltipRect = tooltipElement.getBoundingClientRect();
-                if (left + tooltipRect.width > window.innerWidth) {
-                    left = event.pointerCoordinate.x - tooltipRect.width - offsetX + chartRect.left + window.scrollX;
+                if (event.pointerCoordinate) { // <-- 新增檢查
+                    const offsetX = 15;
+                    const offsetY = 10;
+                    const chartRect = chartContainer.getBoundingClientRect();
+                    let left = event.pointerCoordinate.x + offsetX + chartRect.left + window.scrollX;
+                    let top = event.pointerCoordinate.y + offsetY + chartRect.top + window.scrollY;
+                    const tooltipRect = tooltipElement.getBoundingClientRect();
+                    if (left + tooltipRect.width > window.innerWidth) {
+                        left = event.pointerCoordinate.x - tooltipRect.width - offsetX + chartRect.left + window.scrollX;
+                    }
+                    if (top + tooltipRect.height > window.innerHeight) {
+                        top = event.pointerCoordinate.y - tooltipRect.height - offsetY + chartRect.top + window.scrollY;
+                    }
+                    if (left < window.scrollX) left = window.scrollX + 5;
+                    if (top < window.scrollY) top = window.scrollY + 5;
+                    tooltipElement.style.left = `${left}px`;
+                    tooltipElement.style.top = `${top}px`;
+                } else {
+                     // 如果沒有 pointerCoordinate，可以選擇隱藏 tooltip 或使用默認位置
+                     tooltipElement.style.display = 'none';
                 }
-                if (top + tooltipRect.height > window.innerHeight) {
-                    top = event.pointerCoordinate.y - tooltipRect.height - offsetY + chartRect.top + window.scrollY;
-                }
-                if (left < window.scrollX) left = window.scrollX + 5;
-                if (top < window.scrollY) top = window.scrollY + 5;
-                tooltipElement.style.left = `${left}px`;
-                tooltipElement.style.top = `${top}px`;
             }
         },
         onMouseLeave: (event) => {
