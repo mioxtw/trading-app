@@ -159,6 +159,77 @@ body {
 
 .panel-row .leverage-section input {
     margin-right: 5px;
+/* frontend/style.css */
+
+/* ... existing styles ... */
+
+/* Styles for editable price elements */
+.editable-price {
+    cursor: pointer;
+    text-decoration: underline dashed; /* 提示可點擊 */
+    padding: 2px 4px; /* 增加點擊區域 */
+    border-radius: 3px;
+    transition: background-color 0.2s ease-in-out;
+    display: inline-block; /* 確保 padding 生效 */
+    min-width: 50px; /* 給一個最小寬度，避免數字太短時不好點 */
+    text-align: right; /* 價格靠右對齊 */
+}
+
+.editable-price:hover {
+    background-color: #f0f0f0; /* 懸停效果 */
+}
+
+.editable-price-input {
+    /* 輸入框樣式 */
+    padding: 1px 3px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    text-align: right; /* 輸入時也靠右 */
+    /* 確保 input 和 span 高度接近 */
+    line-height: inherit;
+    font-size: inherit;
+    font-family: inherit;
+    color: inherit;
+    background-color: #fff; /* 白色背景 */
+    /* 移除 number input 的上下箭頭 (可選) */
+    -moz-appearance: textfield;
+}
+.editable-price-input::-webkit-outer-spin-button,
+.editable-price-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* 讓 label 和 value 在同一行且對齊 */
+.position-info .panel-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px; /* 增加行間距 */
+}
+
+.position-info .panel-row label {
+    margin-right: 10px; /* label 和 value 之間的間距 */
+    flex-shrink: 0; /* 防止 label 被壓縮 */
+}
+
+.position-info .panel-row .value {
+    font-weight: bold;
+    text-align: right; /* value 靠右 */
+    flex-grow: 1; /* 佔據剩餘空間 */
+}
+
+.position-info .panel-row .editable-price {
+     flex-grow: 0; /* 不要讓可編輯價格佔滿剩餘空間 */
+     margin-left: 5px; /* 與 label 的最小間距 */
+}
+
+.position-info .panel-row .editable-price-input {
+     flex-grow: 0;
+     margin-left: 5px;
+}
+
+
     max-width: 50px; /* Smaller leverage input */
 }
 

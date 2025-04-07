@@ -39,7 +39,7 @@ let backendWs = null;
 let currentCandle = null;
 let intervalMillis = getIntervalMillis(currentInterval);
 let usdtBalance = 0;
-let positionInfo = null;
+let positionInfo = null; // Stores position risk data from backend
 let currentMarkPrice = null;
 let quantityPrecision = 3;
 let pricePrecision = 2;
@@ -51,11 +51,17 @@ let currentLeverage = 10;
 function updateStatus(message, type = 'info') { console.log(`Status (${type}): ${message}`); if (statusBar) { statusBar.textContent = message; statusBar.classList.remove('status-info', 'status-success', 'status-error', 'status-warning'); statusBar.classList.add(`status-${type}`); } }
 
 // --- Helper Functions ---
-// ... (保持不變) ...
+// ***** MODIFIED formatCurrency *****
 function getIntervalMillis(interval) { const unit = interval.slice(-1).toLowerCase(); const value = parseInt(interval.slice(0, -1)); switch (unit) { case 'm': return value * 60 * 1000; case 'h': return value * 60 * 60 * 1000; case 'd': return value * 24 * 60 * 60 * 1000; default: return 60 * 60 * 1000; } }
 function getKlineTimestamp(tradeTimestamp, intervalMs) { return tradeTimestamp - (tradeTimestamp % intervalMs); }
-function formatCurrency(value, decimals = 2) { const num = parseFloat(value); return isNaN(num) ? '-.--' : num.toFixed(decimals); }
+function formatCurrency(value, decimals = 2) {
+    const num = parseFloat(value);
+    // If value is invalid (NaN) or 0 (often means unset), display "未設定"
+    // If 0 needs to be distinct from unset, check only for isNaN(num)
+    return (isNaN(num) || num === 0) ? '未設定' : num.toFixed(decimals);
+}
 function formatNumber(value, decimals = 3) { const num = parseFloat(value); return isNaN(num) ? '-.---' : num.toFixed(decimals); }
+// ***** END OF MODIFIED formatCurrency *****
 
 // --- Update Trading Panel Symbol ---
 // ... (保持不變) ...
@@ -70,8 +76,106 @@ async function fetchFromBackend(endpoint, options = {}) { const url = `${BACKEND
 async function fetchInitialData() { updateStatus("正在從後端獲取初始數據...", 'info'); const [balanceData, positionData] = await Promise.all([ fetchFromBackend('/balance'), fetchFromBackend(`/position?symbol=${currentSymbol}`) ]); updateAccountPanel(balanceData, positionData); fetchAndSetCurrentLeverage(); }
 
 // --- Update UI Elements ---
-// ... (updateAccountPanel, fetchAndSetCurrentLeverage 保持不變) ...
-function updateAccountPanel(balanceData, positionRiskData) { if (balanceData && Array.isArray(balanceData)) { const usdtAsset = balanceData.find(asset => asset.asset === 'USDT'); usdtBalance = usdtAsset ? parseFloat(usdtAsset.availableBalance) : 0; availableBalanceSpan.textContent = `${formatCurrency(usdtBalance)} USDT`; } else { usdtBalance = 0; availableBalanceSpan.textContent = "-.-- USDT"; } positionDetailsDiv.innerHTML = ''; let positionFound = false; if (positionRiskData && Array.isArray(positionRiskData)) { positionInfo = positionRiskData; const currentPosition = positionRiskData.find(p => p.symbol === currentSymbol && parseFloat(p.positionAmt) !== 0); if (currentPosition) { positionFound = true; positionCountSpan.textContent = '1'; const posAmt = parseFloat(currentPosition.positionAmt); const entryPrice = parseFloat(currentPosition.entryPrice); const markPrice = parseFloat(currentPosition.markPrice); const pnl = parseFloat(currentPosition.unRealizedProfit); const leverage = parseInt(currentPosition.leverage); const liqPrice = parseFloat(currentPosition.liquidationPrice); if (!isNaN(markPrice)) { currentMarkPrice = markPrice; } const marginUsed = Math.abs(posAmt * entryPrice / leverage); const pnlPercent = marginUsed > 0 ? (pnl / marginUsed) * 100 : 0; const estimatedMargin = parseFloat(currentPosition.isolatedWallet || currentPosition.initialMargin || marginUsed); positionDetailsDiv.innerHTML = ` <div class="panel-row"><label>持倉數量 (${quantityUnitSpan.textContent})</label><span class="value">${formatNumber(posAmt, quantityPrecision)}</span></div> <div class="panel-row"><label>開倉價格 (USDT)</label><span class="value">${formatCurrency(entryPrice, pricePrecision)}</span></div> <div class="panel-row"><label>標記價格 (USDT)</label><span class="value">${formatCurrency(markPrice, pricePrecision)}</span></div> <div class="panel-row"><label>未實現盈虧 (USDT)</label><span class="value position-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)} (${pnl >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%)</span></div> <div class="panel-row"><label>預估強平價 (USDT)</label><span class="value">${formatCurrency(liqPrice, pricePrecision)}</span></div> <div class="panel-row"><label>保證金 (USDT)</label><span class="value">${formatCurrency(estimatedMargin)}</span></div> <div class="panel-row"><label>槓桿</label><span class="value">${leverage}x</span></div> `; } } if (!positionFound) { positionInfo = positionRiskData; positionCountSpan.textContent = '0'; positionDetailsDiv.innerHTML = '<div class="no-position">沒有持倉</div>'; } updateCalculations(); }
+// ***** MODIFIED updateAccountPanel to add data attributes *****
+function updateAccountPanel(balanceData, positionRiskData) {
+    console.log("後端返回的原始倉位數據 (positionRiskData):", JSON.stringify(positionRiskData, null, 2)); // 打印原始數據
+    if (balanceData && Array.isArray(balanceData)) {
+        const usdtAsset = balanceData.find(asset => asset.asset === 'USDT');
+        usdtBalance = usdtAsset ? parseFloat(usdtAsset.availableBalance) : 0;
+        // Use formatNumber for balance to avoid showing '未設定' for 0 balance
+        availableBalanceSpan.textContent = `${formatNumber(usdtBalance, pricePrecision)} USDT`;
+    } else {
+        usdtBalance = 0;
+        availableBalanceSpan.textContent = "-.-- USDT"; // Keep default placeholder if data missing
+    }
+
+    positionDetailsDiv.innerHTML = '';
+    let positionFound = false;
+
+    if (positionRiskData && Array.isArray(positionRiskData)) {
+        positionInfo = positionRiskData; // Store the latest position info globally
+        const currentPosition = positionRiskData.find(p => p.symbol === currentSymbol && parseFloat(p.positionAmt) !== 0);
+
+        if (currentPosition) {
+            positionFound = true;
+            positionCountSpan.textContent = '1';
+            const posAmt = parseFloat(currentPosition.positionAmt);
+            const entryPrice = parseFloat(currentPosition.entryPrice);
+            const markPrice = parseFloat(currentPosition.markPrice);
+            const pnl = parseFloat(currentPosition.unRealizedProfit);
+            const leverage = parseInt(currentPosition.leverage);
+            const liqPrice = parseFloat(currentPosition.liquidationPrice);
+
+            if (!isNaN(markPrice)) {
+                currentMarkPrice = markPrice;
+            }
+
+            const marginUsed = Math.abs(posAmt * entryPrice / leverage);
+            const pnlPercent = marginUsed > 0 ? (pnl / marginUsed) * 100 : 0;
+            // 打印用於計算保證金的原始值
+            console.log(`保證金計算 - posAmt: ${posAmt}, entryPrice: ${entryPrice}, leverage: ${leverage}`);
+            console.log(`保證金計算 - isolatedWallet: ${currentPosition.isolatedWallet}, initialMargin: ${currentPosition.initialMargin}`);
+            console.log(`保證金計算 - marginUsed (計算前): ${marginUsed}`);
+
+            // 修改 estimatedMargin 計算邏輯，正確處理 "0" 的情況
+            let estimatedMargin = parseFloat(currentPosition.isolatedWallet);
+            if (isNaN(estimatedMargin) || estimatedMargin <= 0) { // 如果 isolatedWallet 無效或為 0
+                estimatedMargin = parseFloat(currentPosition.initialMargin); // 嘗試 initialMargin
+                if (isNaN(estimatedMargin) || estimatedMargin <= 0) { // 如果 initialMargin 也無效或為 0
+                    estimatedMargin = marginUsed; // 最後回退到計算出的 marginUsed
+                }
+            }
+
+            // 打印最終計算出的保證金值
+            console.log(`保證金計算 - estimatedMargin (最終): ${estimatedMargin}`);
+
+            // Get TP/SL prices (will be undefined if not present in backend data)
+            const takeProfitPrice = currentPosition.takeProfitPrice;
+            const stopLossPrice = currentPosition.stopLossPrice;
+
+            positionDetailsDiv.innerHTML = `
+                <div class="panel-row"><label>持倉數量 (${quantityUnitSpan.textContent || '?'})</label><span class="value">${formatNumber(posAmt, quantityPrecision)}</span></div>
+                <div class="panel-row"><label>開倉價格 (USDT)</label><span class="value">${formatCurrency(entryPrice, pricePrecision)}</span></div>
+                <div class="panel-row"><label>標記價格 (USDT)</label><span class="value">${formatCurrency(markPrice, pricePrecision)}</span></div>
+                <div class="panel-row"><label>未實現盈虧 (USDT)</label><span class="value position-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)} (${pnl >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%)</span></div>
+                <div class="panel-row"><label>預估強平價 (USDT)</label><span class="value">${formatCurrency(liqPrice, pricePrecision)}</span></div>
+                <div class="panel-row"><label>保證金 (USDT)</label><span class="value">${formatCurrency(estimatedMargin)}</span></div>
+                <div class="panel-row"><label>槓桿</label><span class="value">${leverage}x</span></div>
+                <!-- Add TP/SL rows with data attributes -->
+                <div class="panel-row">
+                    <label>止盈價 (USDT)</label>
+                    <span class="value editable-price"
+                          data-type="tp"
+                          data-symbol="${currentPosition.symbol}"
+                          data-entry-price="${entryPrice}"
+                          data-pos-amt="${posAmt}">
+                          ${formatCurrency(takeProfitPrice, pricePrecision)}
+                    </span>
+                </div>
+                <div class="panel-row">
+                    <label>止損價 (USDT)</label>
+                    <span class="value editable-price"
+                          data-type="sl"
+                          data-symbol="${currentPosition.symbol}"
+                          data-entry-price="${entryPrice}"
+                          data-pos-amt="${posAmt}">
+                          ${formatCurrency(stopLossPrice, pricePrecision)}
+                    </span>
+                </div>
+            `;
+        }
+    }
+
+    if (!positionFound) {
+        positionInfo = positionRiskData; // Store even if no current position (for leverage info)
+        positionCountSpan.textContent = '0';
+        positionDetailsDiv.innerHTML = '<div class="no-position">沒有持倉</div>';
+    }
+
+    updateCalculations();
+}
+// ***** END OF MODIFIED updateAccountPanel *****
+
 function fetchAndSetCurrentLeverage() { if (!positionInfo || !Array.isArray(positionInfo) || positionInfo.length === 0) { console.log("前端: 沒有持倉數據可用於設定槓桿顯示。"); return; } const currentSymbolPosition = positionInfo.find(p => p.symbol === currentSymbol); if (currentSymbolPosition && currentSymbolPosition.leverage) { const fetchedLeverage = parseInt(currentSymbolPosition.leverage); if (!isNaN(fetchedLeverage)) { currentLeverage = fetchedLeverage; leverageInput.value = currentLeverage; console.log(`前端: ${currentSymbol} 的當前槓桿更新為 ${currentLeverage}x`); updateCalculations(); } } else { console.warn(`前端: 在持倉數據中找不到 ${currentSymbol} 的槓桿資訊。`); } }
 
 // --- Actions Triggered by UI ---
@@ -107,7 +211,58 @@ function connectBackendWebSocket() {
 }
 // ***** END OF MODIFIED connectBackendWebSocket *****
 
-function handleBackendWsMessage(message) { /* ... (保持不變) ... */ if (!message || !message.type) return; switch (message.type) { case 'marketUpdate': if (message.stream === 'aggTrade' && message.data?.s === currentSymbol) { handleTickData(message.data); } break; case 'userUpdate': console.log("用戶數據更新:", message.event, message.data); if (userStreamStatusSpan) { userStreamStatusSpan.textContent = "已連接"; userStreamStatusSpan.style.color = "green"; } console.log("偵測到用戶數據事件，從後端重新獲取數據..."); fetchInitialData(); break; case 'error': console.error("收到來自後端的錯誤訊息:", message.message); updateStatus(`後端錯誤: ${message.message}`, 'error'); if (message.message.includes("用戶數據")) { if (userStreamStatusSpan) { userStreamStatusSpan.textContent = "錯誤"; userStreamStatusSpan.style.color = "red"; } } break; case 'status': console.log("後端狀態:", message.context, message.status, message.message); if (message.context === 'userStream' && userStreamStatusSpan) { userStreamStatusSpan.textContent = message.status === 'connected' ? '已連接' : (message.status === 'disconnected' ? '已斷開' : '未知'); userStreamStatusSpan.style.color = message.status === 'connected' ? 'green' : (message.status === 'error' ? 'red' : 'orange'); } break; case 'config': if (backendModeSpan && message.apiMode) { backendModeSpan.textContent = message.apiMode.toUpperCase(); } break; default: console.log("收到未知的後端 WS 訊息類型:", message.type); } }
+function handleBackendWsMessage(message) {
+    if (!message || !message.type) return;
+    console.log("收到後端 WS 訊息:", message); // Log all messages for debugging
+
+    switch (message.type) {
+        case 'marketUpdate':
+            if (message.stream === 'aggTrade' && message.data?.s === currentSymbol) {
+                handleTickData(message.data);
+            }
+            break;
+        case 'userUpdate':
+            console.log("用戶數據更新:", message.event, message.data);
+            if (userStreamStatusSpan) {
+                userStreamStatusSpan.textContent = "已連接";
+                userStreamStatusSpan.style.color = "green";
+            }
+            // 任何用戶數據更新（包括訂單成交、資金變化等）都觸發數據刷新
+            console.log("偵測到用戶數據事件，從後端重新獲取數據...");
+            fetchInitialData();
+            break;
+        case 'conditionalOrderUpdate': // *** 新增處理條件訂單更新 ***
+            console.log(`收到條件訂單更新 (${message.action} ${message.orderType} for ${message.symbol})，重新獲取數據...`);
+            updateStatus(`後端回報 ${message.symbol} ${message.orderType.toUpperCase()} ${message.action === 'create' ? '設定' : '取消'} 操作已發送。正在刷新...`, 'info');
+            // 重新獲取帳戶和持倉數據以更新 UI
+            fetchInitialData();
+            break;
+        case 'error':
+            console.error("收到來自後端的錯誤訊息:", message.message);
+            updateStatus(`後端錯誤: ${message.message}`, 'error');
+            if (message.message.includes("用戶數據")) {
+                if (userStreamStatusSpan) {
+                    userStreamStatusSpan.textContent = "錯誤";
+                    userStreamStatusSpan.style.color = "red";
+                }
+            }
+            break;
+        case 'status':
+            console.log("後端狀態:", message.context, message.status, message.message);
+            if (message.context === 'userStream' && userStreamStatusSpan) {
+                userStreamStatusSpan.textContent = message.status === 'connected' ? '已連接' : (message.status === 'disconnected' ? '已斷開' : '未知');
+                userStreamStatusSpan.style.color = message.status === 'connected' ? 'green' : (message.status === 'error' ? 'red' : 'orange');
+            }
+            break;
+        case 'config':
+            if (backendModeSpan && message.apiMode) {
+                backendModeSpan.textContent = message.apiMode.toUpperCase();
+            }
+            break;
+        default:
+            console.log("收到未知的後端 WS 訊息類型:", message.type);
+    }
+}
 function handleTickData(tick) { /* ... (保持不變) ... */ if (!klineChart) return; const tickTime = parseInt(tick.T); const tickPrice = parseFloat(tick.p); const tickVolume = parseFloat(tick.q); if (isNaN(tickTime) || isNaN(tickPrice) || isNaN(tickVolume)) { return; } currentMarkPrice = tickPrice; if (currentCandle) { const klineTimestamp = getKlineTimestamp(tickTime, intervalMillis); if (klineTimestamp > currentCandle.timestamp) { klineChart.updateData({ ...currentCandle }); currentCandle = { timestamp: klineTimestamp, open: tickPrice, high: tickPrice, low: tickPrice, close: tickPrice, volume: tickVolume }; klineChart.updateData({ ...currentCandle }); } else if (klineTimestamp === currentCandle.timestamp) { currentCandle.high = Math.max(currentCandle.high, tickPrice); currentCandle.low = Math.min(currentCandle.low, tickPrice); currentCandle.close = tickPrice; currentCandle.volume += tickVolume; klineChart.updateData({ ...currentCandle }); } } else { console.warn("收到 Tick 但 currentCandle 為空"); } updateCalculations(); }
 
 // --- CSV/XLSX Parsing & Trade Marks ---
@@ -177,3 +332,265 @@ window.addEventListener('beforeunload', () => {
         backendWs.close();
     }
 });
+
+
+// --- Event Listeners and Handlers for Editable Prices ---
+positionDetailsDiv.addEventListener('click', (event) => {
+    // 只處理直接點擊 .editable-price 的情況
+    if (event.target.classList.contains('editable-price')) {
+        // 如果已經存在輸入框，則不重複創建
+        if (event.target.parentNode.querySelector('.editable-price-input')) {
+            return;
+        }
+        makePriceEditable(event.target);
+    }
+});
+
+// ***** MODIFIED makePriceEditable to read data attributes *****
+function makePriceEditable(spanElement) {
+    const currentPriceText = spanElement.textContent;
+    const type = spanElement.dataset.type; // 'tp' or 'sl'
+    const symbol = spanElement.dataset.symbol;
+    // Read entry price and position amount from data attributes
+    const entryPrice = parseFloat(spanElement.dataset.entryPrice);
+    const posAmt = parseFloat(spanElement.dataset.posAmt);
+
+    // 創建 input 元素
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'editable-price-input'; // 添加 class 以便樣式化
+    // 嘗試從文本解析數字，如果失敗或為 "未設定"，則留空
+    const currentPriceNum = parseFloat(currentPriceText); // NaN if currentPriceText is '未設定'
+    input.value = (isNaN(currentPriceNum) || currentPriceNum === 0) ? '' : currentPriceNum.toFixed(pricePrecision);
+    input.step = (1 / Math.pow(10, pricePrecision)).toFixed(pricePrecision); // 根據精度設定 step
+    input.style.width = '80px'; // 簡單設定寬度
+    input.placeholder = "輸入價格";
+
+    // 替換 span 為 input
+    spanElement.style.display = 'none'; // 隱藏 span
+    // 插入到 span 之後，而不是替換，以便取消時恢復
+    spanElement.parentNode.insertBefore(input, spanElement.nextSibling);
+    input.focus(); // 自動聚焦
+    input.select(); // 全選內容
+
+    // ***** MODIFIED handleInputComplete for validation *****
+    const handleInputComplete = async (eventTrigger) => {
+        // 移除事件監聽器，避免重複觸發
+        input.removeEventListener('blur', handleBlur);
+        input.removeEventListener('keydown', handleKeydown);
+
+        const newPriceStr = input.value.trim();
+        input.remove(); // 移除 input
+        spanElement.style.display = ''; // 顯示 span
+
+        // 檢查價格是否有效且已更改
+        const newPriceNum = parseFloat(newPriceStr);
+        const oldPriceNum = parseFloat(currentPriceText); // NaN if '未設定'
+
+        // 如果價格無效 (<0)、或未改變 (考慮精度)，則恢復原狀
+        // 注意: 允許設置為 0 或清空來取消 TP/SL
+        // Handle change from '未設定' (isNaN(oldPriceNum))
+        const priceChanged = isNaN(oldPriceNum) ? !isNaN(newPriceNum) : Math.abs(newPriceNum - oldPriceNum) >= (1 / Math.pow(10, pricePrecision + 1));
+        const isValidPriceFormat = !isNaN(newPriceNum) && newPriceNum >= 0; // 允許 0
+        const isEmptyInput = newPriceStr === '';
+
+        // 如果輸入非空，但格式無效或價格未變，則恢復
+        if (!isEmptyInput && (!isValidPriceFormat || !priceChanged)) {
+             spanElement.textContent = currentPriceText; // 恢復原樣
+             console.log(`價格未改變或格式無效 (${newPriceStr})，取消設定。`);
+             return;
+        }
+
+        // 如果輸入為空 或 數字為 0，則視為取消 (發送 0 到後端)
+        const priceToSend = (isEmptyInput || newPriceNum === 0) ? 0 : newPriceNum;
+
+        // --- 開始價格邏輯驗證 (僅在設定價格時，取消時 priceToSend 為 0) ---
+        if (priceToSend !== 0 && !isNaN(entryPrice) && !isNaN(posAmt) && posAmt !== 0) {
+            let validationError = null;
+            if (posAmt > 0) { // 多頭
+                if (type === 'tp' && priceToSend <= entryPrice) {
+                    validationError = "多單止盈價必須高於開倉價";
+                } else if (type === 'sl' && priceToSend >= entryPrice) {
+                    validationError = "多單止損價必須低於開倉價";
+                }
+            } else { // 空頭 (posAmt < 0)
+                if (type === 'tp' && priceToSend >= entryPrice) {
+                    validationError = "空單止盈價必須低於開倉價";
+                } else if (type === 'sl' && priceToSend <= entryPrice) {
+                    validationError = "空單止損價必須高於開倉價";
+                }
+            }
+
+            if (validationError) {
+                updateStatus(validationError, 'warning');
+                spanElement.textContent = currentPriceText; // 恢復原樣
+                console.log(`價格邏輯驗證失敗: ${validationError}`);
+                return; // 驗證失敗，不繼續
+            }
+        }
+        // --- 結束價格邏輯驗證 ---
+
+
+        // 如果是取消操作，但原價已經是 "未設定" 或 0，則不發送請求
+        if (priceToSend === 0 && (isNaN(oldPriceNum) || oldPriceNum === 0)) {
+            spanElement.textContent = formatCurrency(0, pricePrecision); // 恢復為 "未設定"
+            console.log(`無需取消，原價格已為 0 或未設定。`);
+            return;
+        }
+
+        // 如果價格未變 (包括從 0 變 0)，也不發送請求
+        // Check if both are NaN (e.g., was '未設定', input is invalid -> NaN)
+        if (isNaN(priceToSend) && isNaN(oldPriceNum)) {
+             spanElement.textContent = currentPriceText; // Restore '未設定'
+             console.log(`價格未改變 (仍為無效)，無需設定。`);
+             return;
+        }
+        // Check if they are numerically the same
+        if (priceToSend === oldPriceNum && !isEmptyInput) { // Ensure not triggered by empty input resulting in 0 === 0
+             spanElement.textContent = currentPriceText;
+             console.log(`價格未改變 (${priceToSend})，無需設定。`);
+             return;
+        }
+
+
+        const formattedDisplayPrice = formatCurrency(priceToSend, pricePrecision);
+        spanElement.textContent = formattedDisplayPrice; // 先樂觀更新顯示
+
+        const actionText = priceToSend === 0 ? '取消' : '設定';
+        updateStatus(`正在${actionText} ${symbol} ${type.toUpperCase()} 價格為 ${formattedDisplayPrice}...`, 'info'); // Use formatted price
+
+        // *** 調用後端 API ***
+        const success = await setStopOrder(symbol, type, priceToSend.toFixed(pricePrecision));
+
+        if (success) {
+            updateStatus(`${symbol} ${type.toUpperCase()} 價格已${actionText}${priceToSend === 0 ? '' : '為 ' + formattedDisplayPrice}`, 'success');
+            // 成功後，後端應通過 WebSocket 推送更新，前端的 updateAccountPanel 會處理
+            // fetchInitialData(); // Consider fetching data again if WS update is not immediate
+        } else {
+            updateStatus(`${actionText} ${symbol} ${type.toUpperCase()} 價格失敗，恢復原價`, 'error');
+            spanElement.textContent = currentPriceText; // 設定失敗，恢復原價
+        }
+    };
+    // ***** END OF MODIFIED handleInputComplete *****
+
+    // 分開處理 blur 和 keydown
+    const handleBlur = () => {
+        // 延遲處理 blur，以允許點擊其他元素（如果需要）
+        // 同時檢查 relatedTarget 是否是輸入框本身或其父元素內的元素，避免誤觸發
+        setTimeout(() => {
+             // 檢查 input 是否還在 DOM 中，如果已被移除（例如通過 Esc），則不處理
+             if (!document.body.contains(input)) return;
+             handleInputComplete('blur');
+        }, 150); // 稍微增加延遲
+    };
+    const handleKeydown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // 阻止表單提交（如果有的話）
+            handleInputComplete('enter');
+        } else if (e.key === 'Escape') {
+            // 按 Esc 取消
+            input.removeEventListener('blur', handleBlur); // 移除監聽器
+            input.removeEventListener('keydown', handleKeydown);
+            input.remove();
+            spanElement.style.display = '';
+            spanElement.textContent = currentPriceText;
+            console.log("用戶取消設定。");
+        }
+    };
+
+    input.addEventListener('blur', handleBlur);
+    input.addEventListener('keydown', handleKeydown);
+}
+// ***** END OF MODIFIED makePriceEditable *****
+
+// ***** MODIFIED setStopOrder to use actual API call *****
+async function setStopOrder(symbol, type, price) {
+    // price 為 '0.00' 或 0 表示取消該類型的止盈/止損單
+    const priceNum = parseFloat(price);
+    const action = priceNum === 0 ? '取消' : '設定';
+    console.log(`請求後端 ${action}: ${symbol}, 類型: ${type.toUpperCase()}, 價格: ${price}`);
+    updateStatus(`正在發送 ${type.toUpperCase()} ${action}請求...`, 'info');
+
+
+    // --- 真實的 API 調用 ---
+    // **重要**: 您需要在後端實現 '/api/conditional-order' 端點
+    // 後端需要處理 'create' 和 'cancel' 動作
+    const endpoint = '/conditional-order'; // **修正：移除開頭的 /api**
+    const method = 'POST';
+    let body = {};
+
+    // 獲取當前倉位信息以確定 side 和 quantity (從全局變量 positionInfo)
+    // 後端也應該驗證倉位狀態
+    const currentPosition = positionInfo?.find(p => p.symbol === symbol && parseFloat(p.positionAmt) !== 0);
+    const positionAmt = parseFloat(currentPosition?.positionAmt || 0);
+
+    if (priceNum === 0) {
+        // --- 取消訂單 ---
+        console.log(`請求取消 ${symbol} 的 ${type.toUpperCase()} 訂單`);
+        body = {
+            symbol: symbol,
+            action: 'cancel', // 告知後端執行取消操作
+            type: type // 'tp' or 'sl'，告知後端取消哪種類型
+            // 後端可能需要根據 symbol 和 type 查找對應的活動訂單並取消
+            // 或者，如果前端能獲取到訂單 ID，也可以傳遞 orderId
+            // orderId: findExistingStopOrderId(symbol, type) // 需要實現查找邏輯
+        };
+        // 如果沒有倉位，理論上也不應該有止盈止損單，但取消操作通常是安全的
+        if (!currentPosition) {
+             console.warn(`嘗試取消 ${symbol} ${type.toUpperCase()} 時沒有倉位信息，仍嘗試發送取消請求。`);
+        }
+
+    } else {
+        // --- 創建/修改訂單 ---
+        if (!currentPosition || positionAmt === 0) {
+             updateStatus(`無法設定 ${type.toUpperCase()}：沒有 ${symbol} 的持倉`, 'warning');
+             console.error(`無法設定 ${type.toUpperCase()}：沒有 ${symbol} 的持倉`);
+             return false; // 沒有倉位不能設定止盈止損
+        }
+        console.log(`請求設定 ${symbol} 的 ${type.toUpperCase()} 訂單，價格 ${price}`);
+        const orderSide = positionAmt > 0 ? 'SELL' : 'BUY'; // 平倉方向
+        // 根據交易所 API 要求確定訂單類型 (可能是 STOP_MARKET, TAKE_PROFIT_MARKET 等)
+        const orderType = type === 'tp' ? 'TAKE_PROFIT_MARKET' : 'STOP_MARKET'; // 示例
+        const quantity = Math.abs(positionAmt).toFixed(quantityPrecision);
+
+        // 使用 closePosition: true，不再需要前端計算 quantity
+        body = {
+            symbol: symbol,
+            action: 'create', // 告知後端執行創建/修改操作
+            type: type,       // 'tp' or 'sl'
+            price: price,     // 觸發價格
+            side: orderSide,
+            orderType: orderType // 交易所要求的訂單類型
+            // quantity: quantity, // 移除 quantity
+            // reduceOnly: 'true' // 後端將使用 closePosition=true，隱含 reduceOnly
+        };
+    }
+
+
+    try {
+        // 使用修正後的 endpoint
+        const result = await fetchFromBackend(endpoint, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (result) { // 假設後端成功時返回非 null 或 { success: true }
+             console.log(`後端回報 ${type.toUpperCase()} ${action} 請求成功:`, result);
+             // updateStatus 已在 handleInputComplete 中調用
+             // 建議等待 WebSocket 更新，而不是立即刷新
+             // fetchInitialData();
+             return true;
+        } else {
+             // fetchFromBackend 內部已經處理了錯誤狀態更新
+             console.error(`後端回報 ${type.toUpperCase()} ${action} 請求失敗`);
+             return false;
+        }
+    } catch (error) {
+        // fetchFromBackend 內部已經處理了 fetch 錯誤
+        console.error(`${action} ${type.toUpperCase()} 訂單時捕獲到意外錯誤:`, error);
+        // updateStatus(`${action} ${type.toUpperCase()} 時出錯`, 'error'); // fetchFromBackend 已處理
+        return false;
+    }
+}
+// ***** END OF MODIFIED setStopOrder *****
