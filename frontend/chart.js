@@ -51,7 +51,6 @@ function initChart() {
         }
         window.globalState.klineChart.createIndicator('Candle');
         window.globalState.klineChart.createIndicator('VOL', false, { id: 'pane_vol' });
-        window.globalState.klineChart.createIndicator('MA', true, { id: 'candle_pane' });
         console.log(`圖表已初始化，klinecharts 版本 v${klinecharts.version()}`);
 
         // Initial data load triggered from main script after chart init
@@ -170,11 +169,50 @@ if (typeof klinecharts !== 'undefined') {
             // 3. 只繪製連接線
             const pnl = parseFloat(data.pnl);
             const lineColor = isNaN(pnl) ? '#888888' : (pnl >= 0 ? '#26a69a' : '#ef5350'); // 綠色盈利，紅色虧損，灰色未知
+            // 繪製實線
             figures.push({
                 type: 'line',
                 attrs: { coordinates: [{ x: openPoint.x, y: openPoint.y }, { x: closePoint.x, y: closePoint.y }] },
-                styles: { style: 'dashed', color: lineColor, size: 1 }
+                styles: { style: 'solid', color: lineColor, size: 1 } // 改成 solid
             });
+
+            // 4. 在平倉點繪製指向開倉點的箭頭
+            const arrowLength = 8; // 箭頭長度
+            const arrowAngle = Math.PI / 6; // 箭頭翼尖角度 (30度)
+
+            const dx = openPoint.x - closePoint.x;
+            const dy = openPoint.y - closePoint.y;
+
+            // 避免除以零或計算無效角度
+            if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) {
+                const angle = Math.atan2(dy, dx); // 線條角度
+
+                // 箭頭的翼尖點相對於基點(closePoint)的座標
+                const arrowPoint1 = {
+                    x: closePoint.x + arrowLength * Math.cos(angle - arrowAngle),
+                    y: closePoint.y + arrowLength * Math.sin(angle - arrowAngle)
+                };
+                const arrowPoint2 = {
+                    x: closePoint.x + arrowLength * Math.cos(angle + arrowAngle),
+                    y: closePoint.y + arrowLength * Math.sin(angle + arrowAngle)
+                };
+
+                // 添加箭頭圖形 (三角形)
+                figures.push({
+                    type: 'polygon',
+                    attrs: {
+                        coordinates: [
+                            { x: closePoint.x, y: closePoint.y }, // 箭頭基點 (平倉點)
+                            arrowPoint1, // 翼尖1
+                            arrowPoint2  // 翼尖2
+                        ]
+                    },
+                    styles: {
+                        style: 'fill', // 實心填充
+                        color: lineColor // 顏色同線條
+                    }
+                });
+            }
 
             return figures;
         },
@@ -200,22 +238,27 @@ if (typeof klinecharts !== 'undefined') {
                 tooltipElement.style.display = 'block';
 
                 // 定位 Tooltip (與 tradeMarker 邏輯相同)
-                const offsetX = 15;
-                const offsetY = 10;
-                const chartRect = chartContainer.getBoundingClientRect();
-                let left = event.pointerCoordinate.x + offsetX + chartRect.left + window.scrollX;
-                let top = event.pointerCoordinate.y + offsetY + chartRect.top + window.scrollY;
-                const tooltipRect = tooltipElement.getBoundingClientRect();
-                if (left + tooltipRect.width > window.innerWidth) {
-                    left = event.pointerCoordinate.x - tooltipRect.width - offsetX + chartRect.left + window.scrollX;
+                if (event.pointerCoordinate) { // <-- 新增檢查
+                    const offsetX = 15;
+                    const offsetY = 10;
+                    const chartRect = chartContainer.getBoundingClientRect();
+                    let left = event.pointerCoordinate.x + offsetX + chartRect.left + window.scrollX;
+                    let top = event.pointerCoordinate.y + offsetY + chartRect.top + window.scrollY;
+                    const tooltipRect = tooltipElement.getBoundingClientRect();
+                    if (left + tooltipRect.width > window.innerWidth) {
+                        left = event.pointerCoordinate.x - tooltipRect.width - offsetX + chartRect.left + window.scrollX;
+                    }
+                    if (top + tooltipRect.height > window.innerHeight) {
+                        top = event.pointerCoordinate.y - tooltipRect.height - offsetY + chartRect.top + window.scrollY;
+                    }
+                    if (left < window.scrollX) left = window.scrollX + 5;
+                    if (top < window.scrollY) top = window.scrollY + 5;
+                    tooltipElement.style.left = `${left}px`;
+                    tooltipElement.style.top = `${top}px`;
+                } else {
+                     // 如果沒有 pointerCoordinate，可以選擇隱藏 tooltip 或使用默認位置
+                     tooltipElement.style.display = 'none';
                 }
-                if (top + tooltipRect.height > window.innerHeight) {
-                    top = event.pointerCoordinate.y - tooltipRect.height - offsetY + chartRect.top + window.scrollY;
-                }
-                if (left < window.scrollX) left = window.scrollX + 5;
-                if (top < window.scrollY) top = window.scrollY + 5;
-                tooltipElement.style.left = `${left}px`;
-                tooltipElement.style.top = `${top}px`;
             }
         },
         onMouseLeave: (event) => {
