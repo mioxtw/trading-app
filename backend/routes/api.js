@@ -55,6 +55,17 @@ router.get('/position', asyncHandler(async (req, res) => {
     res.json({ success: true, data });
 }));
 
+// 新增：獲取歷史成交紀錄
+router.get('/trades/history', asyncHandler(async (req, res) => {
+    const { symbol, limit } = req.query; // 可以選擇性地添加 limit
+    if (!symbol) {
+        return res.status(400).json({ success: false, message: '缺少 symbol 參數' });
+    }
+    // 假設 binanceService 中會有 getTradeHistory 函數
+    const data = await binanceService.getTradeHistory(symbol, limit || 500); // 預設 limit 為 500
+    res.json({ success: true, data });
+}));
+
 // 設定槓桿
 router.post('/leverage', asyncHandler(async (req, res) => {
     const { symbol, leverage } = req.body;

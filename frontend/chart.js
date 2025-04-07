@@ -216,7 +216,9 @@ function applyTradeMarks(tradesData) {
                 console.warn(`無法解析 Excel 日期數字: ${dateValue}`, row);
                 timestamp = NaN;
             }
-        } else { // Attempt string parsing (assuming UTC or ISO format)
+        } else if (typeof dateValue === 'number' && dateValue > 1000000000000) { // Check for likely Unix milliseconds timestamp (e.g., > year 2001)
+            timestamp = dateValue; // Directly use the number as timestamp
+        } else { // Attempt string parsing as fallback
              let dateStr = String(dateValue).trim();
              // Add 'Z' if no timezone specified, assuming UTC
              if (!dateStr.includes('Z') && !dateStr.match(/[+-]\d{2}:?\d{2}$/)) {
@@ -292,7 +294,20 @@ function applyTradeMarks(tradesData) {
         }
     }
 }
+// --- Make applyTradeMarks globally accessible ---
+window.applyTradeMarks = applyTradeMarks;
 
+// --- Function to remove trade marks ---
+function removeTradeMarks() {
+    if (window.globalState && window.globalState.klineChart) {
+        console.log("Removing trade marks overlay...");
+        window.globalState.klineChart.removeOverlay({ groupId: TRADE_MARKER_GROUP_ID });
+        updateStatus("歷史成交標記已隱藏", 'info');
+    } else {
+        console.warn("Chart not initialized, cannot remove trade marks.");
+    }
+}
+window.removeTradeMarks = removeTradeMarks; // Make it globally accessible
 
 // --- Custom Overlay Definition ---
 // Needs to be registered once, typically in the main script or chart script
@@ -324,7 +339,7 @@ if (typeof klinecharts !== 'undefined') {
             let points;
 
             if (side === 'BUY') {
-                color = '#26a69a'; // Green for buy
+                color = '#FFD700'; // Yellow for buy
                 const yBase = point.y + offset; // Below the price point
                 const yTip = yBase - triangleHeight;
                 points = [
@@ -333,7 +348,7 @@ if (typeof klinecharts !== 'undefined') {
                     { x: point.x + triangleBaseHalf, y: yBase }  // Bottom right
                 ];
             } else if (side === 'SELL') {
-                color = '#ef5350'; // Red for sell
+                color = '#2196F3'; // Blue for sell
                 const yBase = point.y - offset; // Above the price point
                 const yTip = yBase + triangleHeight;
                 points = [
