@@ -7,7 +7,8 @@ window.globalState = {
     intervalMillis: 3600000, // Default to 1h
     backendWs: null,
     klineChart: null,
-    allTrades: [], // For historical trade markers
+    allTrades: [], // For historical trade markers (from file upload)
+    binanceTradeHistory: [], // For historical trades loaded from Binance API
     positionInfo: null, // Current position data from backend
     usdtBalance: 0,
     currentLeverage: 10, // Default leverage
@@ -104,6 +105,37 @@ function getIntervalMillis(interval) {
     }
 }
 
+// --- Function to load initial trade history ---
+async function loadInitialBinanceTradeHistory() {
+    console.log("嘗試載入初始幣安歷史成交紀錄...");
+    updateStatus("正在載入歷史成交紀錄...", 'info');
+
+    const historyData = await fetchFromBackend('/trades/history?symbol=BTCUSDT'); // Assuming backend endpoint
+
+    // Store the fetched data regardless of whether the function exists yet
+    window.globalState.binanceTradeHistory = historyData || [];
+
+    if (historyData && Array.isArray(historyData) && historyData.length > 0) {
+        console.log(`從後端收到 ${window.globalState.binanceTradeHistory.length} 筆歷史成交紀錄`);
+        // *** Corrected function name ***
+        if (typeof window.applyTradeMarks === 'function') {
+            // Apply marks initially since checkbox is checked by default
+            window.applyTradeMarks(window.globalState.binanceTradeHistory);
+            updateStatus("歷史成交紀錄已載入", 'success');
+        } else {
+            console.error("window.applyTradeMarks function not found (ensure it's exposed globally in chart.js)");
+            updateStatus("無法在圖表上顯示歷史成交", 'warning');
+        }
+    } else if (historyData) { // Received response, but maybe empty array or non-array
+         console.log("後端未返回有效的歷史成交紀錄");
+         updateStatus("未找到歷史成交紀錄", 'info');
+    } else { // fetchFromBackend returned null (error occurred)
+        // Status already updated by fetchFromBackend
+        console.error("獲取歷史成交紀錄失敗");
+        // No need to update status again, fetchFromBackend handles errors
+    }
+}
+
 
 // --- Initialization Function ---
 async function initializeApp() {
@@ -160,7 +192,37 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("前端 DOM 已載入");
     // Ensure all modules are loaded before initializing
     // The script tags in HTML ensure the order
-    initializeApp();
+    initializeApp().then(() => { // Wait for initializeApp to potentially finish async ops
+        // Load initial history data (since checkbox is checked by default)
+        // Use setTimeout to ensure chart and other modules are fully ready
+        setTimeout(loadInitialBinanceTradeHistory, 500); // Delay slightly
+
+        // Add change listener for the checkbox
+        const showHistoryCheckbox = document.getElementById('showHistoryCheckbox');
+        if (showHistoryCheckbox) {
+            showHistoryCheckbox.addEventListener('change', (event) => {
+                if (event.target.checked) {
+                    // Show markers using stored data
+                    if (typeof window.applyTradeMarks === 'function') {
+                        console.log("Checkbox checked: Applying trade marks...");
+                        window.applyTradeMarks(window.globalState.binanceTradeHistory);
+                    } else {
+                        console.error("window.applyTradeMarks function not found.");
+                    }
+                } else {
+                    // Hide markers
+                    if (typeof window.removeTradeMarks === 'function') {
+                         console.log("Checkbox unchecked: Removing trade marks...");
+                        window.removeTradeMarks();
+                    } else {
+                        console.error("window.removeTradeMarks function not found.");
+                    }
+                }
+            });
+        } else {
+            console.warn("找不到 #showHistoryCheckbox 元素");
+        }
+    });
 });
 
 // --- Cleanup ---

@@ -322,6 +322,17 @@ async function placeOrCancelConditionalOrder(params) {
     }
 }
 
+// 新增：獲取用戶歷史成交紀錄
+async function getTradeHistory(symbol, limit = 500) {
+    console.log(`正在獲取 ${symbol} 的歷史成交紀錄 (limit: ${limit})...`);
+    const params = {
+        symbol: symbol,
+        limit: Math.min(limit, 1000) // 幣安限制最大 1000
+    };
+    // /fapi/v1/userTrades 是私有 GET 請求
+    return makeRequest('/fapi/v1/userTrades', 'GET', params, false);
+}
+
 
 module.exports = {
     getKlineData,
@@ -332,4 +343,5 @@ module.exports = {
     getListenKey,
     keepAliveListenKey,
     placeOrCancelConditionalOrder, // 導出新函數
+    getTradeHistory, // <--- 導出 getTradeHistory
 };
