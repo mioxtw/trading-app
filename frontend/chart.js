@@ -51,7 +51,6 @@ function initChart() {
         }
         window.globalState.klineChart.createIndicator('Candle');
         window.globalState.klineChart.createIndicator('VOL', false, { id: 'pane_vol' });
-        window.globalState.klineChart.createIndicator('MA', true, { id: 'candle_pane' });
         console.log(`圖表已初始化，klinecharts 版本 v${klinecharts.version()}`);
 
         // Initial data load triggered from main script after chart init
