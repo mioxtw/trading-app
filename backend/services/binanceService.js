@@ -112,75 +112,73 @@ async function getPositionRisk(symbol = null) {
     const openOrderParams = { symbol };
 
     try {
-        console.log(`正在獲取 ${symbol} 的倉位風險和掛單信息...`);
-        // 並行獲取倉位風險和掛單數據
-        const [positionRiskData, openOrdersData] = await Promise.all([
-            makeRequest('/fapi/v2/positionRisk', 'GET', positionParams, false),
-            makeRequest('/fapi/v1/openOrders', 'GET', openOrderParams, false)
-        ]);
-
+        console.log(`正在獲取 ${symbol} 的倉位風險...`);
+        const positionRiskData = await makeRequest('/fapi/v2/positionRisk', 'GET', positionParams, false);
         console.log(`獲取到 ${symbol} 倉位數據: ${positionRiskData?.length} 條`);
-        console.log(`獲取到 ${symbol} 掛單數據: ${openOrdersData?.length} 條`);
 
-        // 如果沒有倉位數據，直接返回空陣列或原始數據
+        // 如果沒有倉位數據，直接返回
         if (!positionRiskData || !Array.isArray(positionRiskData)) {
             return positionRiskData || [];
+        }
+
+        let openOrdersData = []; // 初始化為空陣列
+        try {
+            console.log(`正在獲取 ${symbol} 的掛單信息...`);
+            openOrdersData = await makeRequest('/fapi/v1/openOrders', 'GET', openOrderParams, false);
+            console.log(`獲取到 ${symbol} 掛單數據: ${openOrdersData?.length} 條`);
+        } catch (orderError) {
+            console.warn(`獲取 ${symbol} 的掛單信息失敗 (將繼續處理倉位數據):`, orderError.message);
+            // 不拋出錯誤，允許繼續處理倉位數據，但止盈止損價將為 '0'
         }
 
         // 處理倉位數據，查找並合併止盈止損價格
         const processedPositions = positionRiskData.map(position => {
             const posAmt = parseFloat(position.positionAmt);
+            let foundTP = false;
+            let foundSL = false;
 
-            // 只處理有實際持倉的數據
+            // 確保 openOrdersData 是陣列才進行查找
             if (posAmt !== 0 && Array.isArray(openOrdersData)) {
-                const closeSide = posAmt > 0 ? 'SELL' : 'BUY'; // 確定平倉方向
+                const closeSide = posAmt > 0 ? 'SELL' : 'BUY';
 
-                // 查找對應的止盈單 (TAKE_PROFIT_MARKET)
                 const takeProfitOrder = openOrdersData.find(order =>
                     order.symbol === position.symbol &&
                     order.side === closeSide &&
                     order.type === 'TAKE_PROFIT_MARKET' &&
-                    order.reduceOnly === true // 確保是減倉單 (雖然我們之前設了 false，但這裡查找時還是加上以防萬一)
-                    // 可以增加更多條件，例如數量匹配 Math.abs(posAmt)
+                    order.closePosition === true // 幣安 TP/SL API 創建的訂單此欄位為 true
                 );
 
-                // 查找對應的止損單 (STOP_MARKET)
                 const stopLossOrder = openOrdersData.find(order =>
                     order.symbol === position.symbol &&
                     order.side === closeSide &&
                     order.type === 'STOP_MARKET' &&
-                    order.reduceOnly === true // 同上
+                    order.closePosition === true // 同上
                 );
 
-                // 將找到的價格添加到倉位對象中
                 if (takeProfitOrder && takeProfitOrder.stopPrice) {
                     position.takeProfitPrice = takeProfitOrder.stopPrice;
-                    console.log(`找到 ${symbol} 止盈單: ${takeProfitOrder.orderId}, 價格: ${position.takeProfitPrice}`);
-                } else {
-                     position.takeProfitPrice = '0'; // 或 null，表示未找到
+                    foundTP = true;
                 }
                 if (stopLossOrder && stopLossOrder.stopPrice) {
                     position.stopLossPrice = stopLossOrder.stopPrice;
-                     console.log(`找到 ${symbol} 止損單: ${stopLossOrder.orderId}, 價格: ${position.stopLossPrice}`);
-                } else {
-                     position.stopLossPrice = '0'; // 或 null，表示未找到
+                    foundSL = true;
                 }
-            } else {
-                 // 沒有持倉或沒有掛單數據，確保價格欄位存在但為 0 或 null
-                 position.takeProfitPrice = '0';
-                 position.stopLossPrice = '0';
             }
+
+            // 如果未找到，確保欄位存在且為 '0'
+            if (!foundTP) position.takeProfitPrice = '0';
+            if (!foundSL) position.stopLossPrice = '0';
+
             return position;
         });
 
-        console.log(`處理後的 ${symbol} 倉位數據:`, processedPositions.find(p=>p.symbol===symbol)); // Debug log
+        console.log(`處理後的 ${symbol} 倉位數據 (TP: ${processedPositions.find(p=>p.symbol===symbol)?.takeProfitPrice}, SL: ${processedPositions.find(p=>p.symbol===symbol)?.stopLossPrice})`);
         return processedPositions;
 
     } catch (error) {
-        console.error(`獲取 ${symbol} 倉位及掛單信息時出錯:`, error);
-        // 根據需要決定是拋出錯誤還是返回部分數據或空數據
-        // 這裡選擇拋出錯誤，讓上層處理
-        throw error;
+        // 這個 catch 主要捕捉獲取 positionRisk 失敗的錯誤
+        console.error(`獲取 ${symbol} 倉位風險時出錯:`, error);
+        throw error; // 仍然拋出獲取倉位本身的錯誤
     }
 }
 
@@ -249,19 +247,75 @@ async function placeOrCancelConditionalOrder(params) {
 
         console.log(`準備取消 ${symbol} 的 ${type.toUpperCase()} 訂單`);
 
-        // **重要**: 取消條件訂單比較複雜，幣安沒有直接按類型取消的 API
-        // 您需要：
-        // 1. 調用 `/fapi/v1/openOrders` (GET) 獲取該 symbol 的所有掛單。
-        // 2. 在返回的訂單列表中，根據訂單類型 (`type` 為 'STOP_MARKET' 或 'TAKE_PROFIT_MARKET') 和可能的觸發價格 (`stopPrice`) 來識別您想要取消的訂單。
-        //    - 注意：可能有多個同類型的掛單，您需要更精確的邏輯來識別（例如，只取消與當前倉位方向相反的平倉單）。
-        // 3. 獲取目標訂單的 `orderId` 或 `origClientOrderId`。
-        // 4. 調用 `/fapi/v1/order` (DELETE) 並傳遞 `symbol` 和 `orderId` 或 `origClientOrderId` 來取消特定訂單。
-        //    - 例如: return makeRequest('/fapi/v1/order', 'DELETE', { symbol, orderId: targetOrderId }, false);
+        // --- 實際取消邏輯 ---
+        try {
+            console.log(`正在獲取 ${symbol} 的未結訂單以查找要取消的 ${type.toUpperCase()} 訂單...`);
+            const openOrders = await makeRequest('/fapi/v1/openOrders', 'GET', { symbol }, false);
 
-        // --- 佔位符返回 ---
-        console.warn("警告: 實際的幣安取消訂單 API 調用邏輯已被註解掉");
-        return { success: true, message: "[模擬] 取消訂單成功", symbol: symbol, type: type };
-        // --- 佔位符結束 ---
+            if (!Array.isArray(openOrders)) {
+                console.warn(`無法獲取 ${symbol} 的未結訂單，或返回格式不正確。`);
+                // 即使找不到訂單，也可能認為取消“成功”（因為沒有訂單需要取消）
+                return { success: true, message: `未找到 ${symbol} 的未結訂單可供取消`, symbol: symbol, type: type };
+            }
+
+            // 確定要查找的訂單類型和方向
+            // 需要獲取當前倉位來確定平倉方向
+            let targetOrderType = null;
+            let targetSide = null;
+            try {
+                const positionRisk = await getPositionRisk(symbol); // 複用現有函數獲取倉位信息
+                const currentPosition = positionRisk.find(p => p.symbol === symbol && parseFloat(p.positionAmt) !== 0);
+                if (currentPosition) {
+                    const posAmt = parseFloat(currentPosition.positionAmt);
+                    if (posAmt > 0) { // Long
+                        targetSide = 'SELL';
+                        targetOrderType = (type === 'tp') ? 'TAKE_PROFIT_MARKET' : 'STOP_MARKET';
+                    } else if (posAmt < 0) { // Short
+                        targetSide = 'BUY';
+                        targetOrderType = (type === 'tp') ? 'TAKE_PROFIT_MARKET' : 'STOP_MARKET';
+                    }
+                }
+            } catch (posError) {
+                console.error(`取消訂單前獲取倉位信息失敗: ${posError.message}`);
+                // 如果無法獲取倉位，可能無法準確判斷要取消哪個訂單，這裡選擇繼續嘗試查找（可能不夠精確）
+            }
+
+            if (!targetOrderType || !targetSide) {
+                 console.warn(`無法確定 ${symbol} 的持倉方向，無法精確查找要取消的 ${type.toUpperCase()} 訂單。將嘗試查找所有同類型訂單。`);
+                 // 如果沒有倉位，理論上也不應該有對應的 TP/SL 單，但還是查找一下
+                 targetOrderType = (type === 'tp') ? 'TAKE_PROFIT_MARKET' : 'STOP_MARKET';
+            }
+
+            // 查找目標訂單
+            const targetOrder = openOrders.find(order =>
+                order.symbol === symbol &&
+                order.type === targetOrderType &&
+                (targetSide ? order.side === targetSide : true) && // 如果能確定方向，則匹配方向
+                order.closePosition === true // 確保是平倉單 (幣安 TP/SL API 創建的訂單此欄位為 true)
+                // 注意：這裡沒有匹配價格，因為用戶可能修改過價格但類型和方向不變
+            );
+
+            if (targetOrder && targetOrder.orderId) {
+                console.log(`找到要取消的 ${type.toUpperCase()} 訂單: ID ${targetOrder.orderId}`);
+                // 發送取消請求
+                const cancelResult = await makeRequest('/fapi/v1/order', 'DELETE', { symbol, orderId: targetOrder.orderId }, false);
+                console.log(`幣安取消訂單 API 回應:`, cancelResult);
+                // 假設取消成功，幣安會返回被取消的訂單信息
+                return { success: true, message: `成功取消 ${type.toUpperCase()} 訂單 (ID: ${targetOrder.orderId})`, data: cancelResult };
+            } else {
+                console.log(`未找到需要取消的活動 ${type.toUpperCase()} 訂單 for ${symbol}`);
+                // 沒有找到訂單也視為成功，因為目標狀態（沒有該訂單）已達成
+                return { success: true, message: `未找到活動的 ${type.toUpperCase()} 訂單可供取消`, symbol: symbol, type: type };
+            }
+        } catch (error) {
+            console.error(`取消 ${symbol} 的 ${type.toUpperCase()} 訂單時出錯:`, error);
+            // 將錯誤信息傳遞給前端
+            throw {
+                status: error.status || 500,
+                binanceError: error.binanceError || null,
+                message: `取消 ${type.toUpperCase()} 訂單失敗: ${error.message}`
+            };
+        }
 
     } else {
         throw new Error(`未知的條件訂單操作: ${action}`);
