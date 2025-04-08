@@ -168,6 +168,28 @@ function handleBackendWsMessage(message) {
                 backendModeSpan.textContent = message.apiMode.toUpperCase();
             }
             break;
+        case 'markPriceUpdate':
+            // Handle mark price updates from the backend
+            if (message.data && message.data.s === window.globalState.currentSymbol) {
+                const markPrice = parseFloat(message.data.p);
+                if (!isNaN(markPrice)) {
+                    // Update global state immediately
+                    window.globalState.currentMarkPrice = markPrice;
+                    // Call the function in trade.js to update UI (PNL and Mark Price display)
+                    if (typeof updateRealtimePnl === 'function') {
+                        updateRealtimePnl(markPrice);
+                    } else {
+                        console.warn("updateRealtimePnl function not found for mark price update.");
+                    }
+                    // Also trigger general calculations update in trade.js
+                    if (typeof updateCalculations === 'function') {
+                        updateCalculations();
+                    }
+                } else {
+                    console.warn("收到無效的標記價格數據:", message.data);
+                }
+            }
+            break;
         default:
             console.log("收到未知的後端 WS 訊息類型:", message.type);
     }
@@ -190,16 +212,8 @@ function handleTickData(tick) {
         return;
     }
 
-    // Update global mark price immediately
-    window.globalState.currentMarkPrice = tickPrice; // Update global mark price
-
-    // --- 新增：使用最新的價格更新實時 PNL ---
-    if (typeof updateRealtimePnl === 'function') {
-        updateRealtimePnl(tickPrice);
-    } else {
-        // console.warn("updateRealtimePnl function not found for tick update.");
-    }
-    // ------------------------------------
+    // Removed: Do not update global mark price or PNL from tick data (aggTrade).
+    // This should be handled by the markPriceUpdate message.
 
     // Update the current candle on the chart
     const currentCandle = window.globalState.currentCandle;

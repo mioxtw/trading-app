@@ -135,7 +135,7 @@ function updateAccountPanel(balanceData, positionRiskData) {
                 positionDetailsDiv.innerHTML = `
                     <div class="panel-row"><label>持倉數量 (${quantityUnitSpan?.textContent || '?'})</label><span class="value">${formatNumber(posAmt, window.globalState.quantityPrecision)}</span></div>
                     <div class="panel-row"><label>開倉價格 (USDT)</label><span class="value">${formatCurrency(entryPrice, window.globalState.pricePrecision)}</span></div>
-                    <div class="panel-row"><label>標記價格 (USDT)</label><span class="value">${formatCurrency(markPrice, window.globalState.pricePrecision)}</span></div>
+                    <div class="panel-row"><label>標記價格 (USDT)</label><span class="value" id="position-mark-price">${formatCurrency(markPrice, window.globalState.pricePrecision)}</span></div>
                     <div class="panel-row"><label>未實現盈虧 (USDT)</label><span class="pnl-container"><span id="realtime-pnl-value" class="value position-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)}</span> (<span id="realtime-pnl-percent" class="${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%</span>)</span></div>
                     <div class="panel-row"><label>預估強平價 (USDT)</label><span class="value">${formatCurrency(liqPrice, window.globalState.pricePrecision)}</span></div>
                     <div class="panel-row"><label>保證金 (USDT)</label><span class="value">${formatCurrency(estimatedMargin)}</span></div>
@@ -900,10 +900,17 @@ function updateRealtimePnl(markPrice) {
 
     const pnlValueSpan = document.getElementById('realtime-pnl-value');
     const pnlPercentSpan = document.getElementById('realtime-pnl-percent');
+    const markPriceSpan = document.getElementById('position-mark-price'); // Get the mark price span
 
-    if (!currentPosition || !pnlValueSpan || !pnlPercentSpan) {
-        // If no position or elements not found, ensure display is cleared or default
-        // (updateAccountPanel handles the initial 'no position' state)
+    if (!currentPosition) {
+        // If no position, ensure mark price display is also cleared or default
+        if (markPriceSpan) markPriceSpan.textContent = '-.---'; // Or some default value
+        return;
+    }
+
+    // Check if all required elements are found
+    if (!pnlValueSpan || !pnlPercentSpan || !markPriceSpan) {
+        console.warn("One or more PNL/Mark Price display elements not found.");
         return;
     }
 
@@ -919,12 +926,21 @@ function updateRealtimePnl(markPrice) {
         }
     }
 
-
     if (isNaN(posAmt) || isNaN(entryPrice) || isNaN(markPrice) || markPrice <= 0 || isNaN(estimatedMargin)) {
-        console.warn("Cannot update realtime PNL due to invalid data:", { posAmt, entryPrice, markPrice, estimatedMargin });
-        return; // Invalid data for calculation
+        console.warn("Cannot update realtime PNL/Mark Price due to invalid data:", { posAmt, entryPrice, markPrice, estimatedMargin });
+        // Optionally update mark price display even if PNL calc fails
+        if (markPriceSpan && !isNaN(markPrice)) {
+             markPriceSpan.textContent = formatCurrency(markPrice, window.globalState.pricePrecision);
+        } else if (markPriceSpan) {
+             markPriceSpan.textContent = '-.---'; // Show default if markPrice is invalid
+        }
+        return; // Invalid data for PNL calculation
     }
 
+    // *** Update Mark Price Display ***
+    markPriceSpan.textContent = formatCurrency(markPrice, window.globalState.pricePrecision);
+
+    // Calculate PNL
     const pnl = (markPrice - entryPrice) * posAmt;
     const pnlPercent = estimatedMargin > 0 ? (pnl / estimatedMargin) * 100 : 0;
 

@@ -72,6 +72,11 @@ server.listen(config.port, () => {
     }
     console.log("正在連接預設市場數據流 (BTCUSDT)...");
     websocketService.connectMarketStream('BTCUSDT'); // 預設連接 BTC
+
+    // *** 新增：連接標記價格流 ***
+    console.log("正在連接標記價格流 (!markPrice@arr@1s)...");
+    websocketService.connectMarkPriceStream();
+    // **************************
 });
 
 // --- 錯誤處理 ---

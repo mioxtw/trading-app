@@ -6,7 +6,8 @@ const binanceService = require('./binanceService');
 let marketWs = null;
 let userWs = null;
 let backendWss = null;
-let currentSymbol = 'BTCUSDT';
+let currentMarketSymbol = 'BTCUSDT'; // Renamed for clarity
+let markPriceWs = null; // WebSocket for mark price stream
 let listenKey = null;
 let listenKeyInterval = null;
 
@@ -78,14 +79,20 @@ function connectMarketStream(symbol) {
     // ... (此函數不變) ...
     if (marketWs && marketWs.readyState === WebSocket.OPEN && currentSymbol === symbol) { console.log(`市場數據流 (${symbol}) 已連接`); return; }
     if (marketWs) { console.log(`正在斷開舊的市場數據流 (${currentSymbol})...`); marketWs.terminate(); marketWs = null; }
-    currentSymbol = symbol.toUpperCase();
-    const streamUrl = `${wsBaseUrl}/ws/${currentSymbol.toLowerCase()}@aggTrade`;
+    currentMarketSymbol = symbol.toUpperCase(); // Use renamed variable
+    const streamUrl = `${wsBaseUrl}/ws/${currentMarketSymbol.toLowerCase()}@aggTrade`;
     console.log(`正在連接幣安市場數據流: ${streamUrl}`);
     marketWs = new WebSocket(streamUrl);
-    marketWs.on('open', () => console.log(`幣安市場數據流 (${currentSymbol}) 已連接`));
-    marketWs.on('message', (data) => { try { const message = JSON.parse(data.toString()); broadcast({ type: 'marketUpdate', stream: message.e, data: message }); } catch (e) { console.error('處理市場數據錯誤:', e); } });
-    marketWs.on('error', (error) => console.error(`幣安市場數據流 (${currentSymbol}) 錯誤:`, error));
-    marketWs.on('close', (code, reason) => { console.log(`幣安市場數據流 (${currentSymbol}) 已關閉: ${code} ${reason}`); marketWs = null; });
+    marketWs.on('open', () => console.log(`幣安市場數據流 (${currentMarketSymbol}) 已連接`));
+    marketWs.on('message', (data) => {
+        try {
+            const message = JSON.parse(data.toString());
+            // Add symbol info to the broadcasted message for frontend filtering
+            broadcast({ type: 'marketUpdate', symbol: currentMarketSymbol, stream: message.e, data: message });
+        } catch (e) { console.error('處理市場數據錯誤:', e); }
+    });
+    marketWs.on('error', (error) => console.error(`幣安市場數據流 (${currentMarketSymbol}) 錯誤:`, error));
+    marketWs.on('close', (code, reason) => { console.log(`幣安市場數據流 (${currentMarketSymbol}) 已關閉: ${code} ${reason}`); marketWs = null; });
 }
 
 // --- 連接幣安用戶數據 WebSocket ---
@@ -106,9 +113,61 @@ async function connectUserDataStream() {
     } catch (error) { console.error("連接用戶數據流失敗:", error); broadcast({ type: 'error', message: '無法連接用戶數據流' }); }
 }
 
+// --- 連接幣安標記價格 WebSocket (所有交易對) ---
+function connectMarkPriceStream() {
+    if (markPriceWs && markPriceWs.readyState === WebSocket.OPEN) {
+        console.log("標記價格流 (!markPrice@arr@1s) 已連接");
+        return;
+    }
+    if (markPriceWs) {
+        console.log("正在斷開舊的標記價格流...");
+        markPriceWs.terminate();
+        markPriceWs = null;
+    }
+
+    const streamUrl = `${wsBaseUrl}/ws/!markPrice@arr@1s`; // Stream for all symbols, updates every second
+    console.log(`正在連接幣安標記價格流: ${streamUrl}`);
+    markPriceWs = new WebSocket(streamUrl);
+
+    markPriceWs.on('open', () => console.log(`幣安標記價格流 (!markPrice@arr@1s) 已連接`));
+
+    markPriceWs.on('message', (data) => {
+        try {
+            const messages = JSON.parse(data.toString());
+            // The stream sends an array of mark price updates
+            if (Array.isArray(messages)) {
+                // Broadcast each update individually or batch them if needed
+                // Broadcasting individually might be simpler for the frontend
+                messages.forEach(message => {
+                    if (message.e === 'markPriceUpdate') {
+                        broadcast({ type: 'markPriceUpdate', data: message });
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('處理標記價格數據錯誤:', e);
+        }
+    });
+
+    markPriceWs.on('error', (error) => {
+        console.error(`幣安標記價格流 (!markPrice@arr@1s) 錯誤:`, error);
+        // Implement reconnection logic if needed
+        markPriceWs = null;
+        setTimeout(connectMarkPriceStream, 5000); // Attempt to reconnect after 5 seconds
+    });
+
+    markPriceWs.on('close', (code, reason) => {
+        console.log(`幣安標記價格流 (!markPrice@arr@1s) 已關閉: ${code} ${reason}`);
+        markPriceWs = null;
+        // Implement reconnection logic if needed
+        setTimeout(connectMarkPriceStream, 5000); // Attempt to reconnect after 5 seconds
+    });
+}
+
 module.exports = {
     initBackendWss,
     broadcast,
     connectMarketStream,
     connectUserDataStream,
+    connectMarkPriceStream, // Export the new function
 };
