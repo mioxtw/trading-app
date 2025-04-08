@@ -168,7 +168,7 @@ if (typeof klinecharts !== 'undefined') {
 
             // 3. 只繪製連接線
             const pnl = parseFloat(data.pnl);
-            const lineColor = isNaN(pnl) ? '#888888' : (pnl >= 0 ? '#26a69a' : '#ef5350'); // 綠色盈利，紅色虧損，灰色未知
+            const lineColor = isNaN(pnl) ? '#888888' : (pnl >= 0 ? '#2196F3' : '#FFD700'); // 藍色盈利，黃色虧損，灰色未知
             // 繪製實線
             figures.push({
                 type: 'line',

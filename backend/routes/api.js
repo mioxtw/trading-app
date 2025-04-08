@@ -33,12 +33,12 @@ router.get('/config', (req, res) => {
 
 // 獲取 K 線數據
 router.get('/kline', asyncHandler(async (req, res) => {
-    const { symbol, interval, limit } = req.query;
+    const { symbol, interval } = req.query; // 移除 limit
     if (!symbol || !interval) {
         return res.status(400).json({ success: false, message: '缺少 symbol 或 interval 參數' });
     }
-    // 後端可以返回原始幣安格式，讓前端處理映射
-    const data = await binanceService.getKlineData(symbol, interval, limit);
+    // 調用修改後的服務函數，該函數內部處理獲取大量數據
+    const data = await binanceService.getKlineData(symbol, interval);
     res.json({ success: true, data });
 }));
 
@@ -68,11 +68,12 @@ router.get('/trades/history', asyncHandler(async (req, res) => {
 
 // 新增：獲取倉位歷史紀錄
 router.get('/position-history', asyncHandler(async (req, res) => {
-    const { symbol, limit, startTime, endTime } = req.query; // 允許傳遞時間範圍
+    const { symbol } = req.query; // 只接收 symbol
     if (!symbol) {
         return res.status(400).json({ success: false, message: '缺少 symbol 參數' });
     }
-    const data = await binanceService.getPositionHistory(symbol, limit || 500, startTime, endTime); // 調用新的 service 函數
+    // 調用已修改的 service 函數，該函數內部處理時間範圍
+    const data = await binanceService.getPositionHistory(symbol);
     res.json({ success: true, data });
 }));
 
