@@ -106,38 +106,120 @@ function getIntervalMillis(interval) {
     }
 }
 
-// --- Function to load initial position history --- // <--- 修改函數名和註釋
-async function loadInitialPositionHistory() { // <--- 修改函數名
-    console.log("嘗試載入初始倉位歷史紀錄..."); // <--- 修改日誌
-    updateStatus("正在載入倉位歷史紀錄...", 'info'); // <--- 修改狀態
+// --- Function to load and render position history ---
+async function loadAndRenderPositionHistory() {
+    const symbol = window.globalState.currentSymbol;
+    console.log(`嘗試載入 ${symbol} 的倉位歷史紀錄...`);
+    updateStatus(`正在載入 ${symbol} 倉位歷史紀錄...`, 'info');
 
-    // *** 修改 API 端點 ***
-    const historyData = await fetchFromBackend('/position-history?symbol=' + window.globalState.currentSymbol); // 使用新端點，並傳遞 symbol
+    const historyContainer = document.getElementById('position-history-table-container');
+    if (historyContainer) {
+        historyContainer.innerHTML = '<p>正在加載歷史紀錄...</p>'; // Show loading message
+    }
 
-    // *** 修改儲存變數 ***
-    window.globalState.positionHistoryData = historyData || []; // <--- 使用新的全局變數
+    const historyData = await fetchFromBackend(`/position-history?symbol=${symbol}`);
 
-    if (historyData && Array.isArray(historyData) && historyData.length > 0) {
-        console.log(`從後端收到 ${window.globalState.positionHistoryData.length} 筆倉位歷史紀錄`); // <--- 修改日誌和變數
-        // *** 修改調用的圖表函數名 ***
-        if (typeof window.applyPositionHistoryMarks === 'function') { // <--- 調用新的圖表函數
-            // Apply marks initially since checkbox is checked by default
-            window.applyPositionHistoryMarks(window.globalState.positionHistoryData); // <--- 傳遞新的數據
-            updateStatus("倉位歷史紀錄已載入", 'success'); // <--- 修改狀態
-        } else {
-            console.error("window.applyPositionHistoryMarks function not found (ensure it's exposed globally in chart.js)");
-            updateStatus("無法在圖表上顯示倉位歷史", 'warning'); // <--- 修改狀態
+    window.globalState.positionHistoryData = historyData || []; // Store data globally
+
+    if (historyData) { // fetchFromBackend succeeded (might be empty array)
+        renderPositionHistory(window.globalState.positionHistoryData); // Render the data (or empty state)
+        updateStatus(`${symbol} 倉位歷史紀錄已載入`, 'success');
+        // Optional: Apply chart markers if needed and function exists
+        if (typeof window.applyPositionHistoryMarks === 'function') {
+             const showHistoryCheckbox = document.getElementById('showHistoryCheckbox');
+             if (showHistoryCheckbox && showHistoryCheckbox.checked) {
+                 window.applyPositionHistoryMarks(window.globalState.positionHistoryData);
+             }
         }
-    } else if (historyData) { // Received response, but maybe empty array or non-array
-         console.log("後端未返回有效的倉位歷史紀錄"); // <--- 修改日誌
-         updateStatus("未找到倉位歷史紀錄", 'info'); // <--- 修改狀態
     } else { // fetchFromBackend returned null (error occurred)
+        if (historyContainer) {
+            historyContainer.innerHTML = '<p style="color: red;">加載歷史紀錄失敗。</p>';
+        }
         // Status already updated by fetchFromBackend
-        console.error("獲取倉位歷史紀錄失敗"); // <--- 修改日誌
-        // No need to update status again, fetchFromBackend handles errors
+        console.error(`獲取 ${symbol} 倉位歷史紀錄失敗`);
     }
 }
 
+// --- Function to render position history table ---
+function renderPositionHistory(historyData) {
+    const container = document.getElementById('position-history-table-container');
+    if (!container) {
+        console.error("找不到 #position-history-table-container 元素");
+        return;
+    }
+
+    container.innerHTML = ''; // Clear previous content
+
+    if (!Array.isArray(historyData) || historyData.length === 0) {
+        container.innerHTML = '<p>沒有倉位歷史紀錄。</p>';
+        return;
+    }
+
+    // Create table structure
+    const table = document.createElement('table');
+    table.className = 'position-history-table'; // Add class for styling
+
+    const thead = document.createElement('thead');
+    thead.innerHTML = `
+        <tr>
+            <th>方向</th>
+            <th>數量</th>
+            <th>開倉均價</th>
+            <th>平倉均價</th>
+            <th>開倉時間</th>
+            <th>平倉時間</th>
+            <th>持倉時長</th>
+            <th>實現盈虧</th>
+            <th>手續費</th>
+            <th>淨盈虧</th>
+        </tr>
+    `;
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    historyData.forEach(pos => {
+        const tr = document.createElement('tr');
+
+        const openTime = new Date(pos.openTime).toLocaleString();
+        const closeTime = new Date(pos.closeTime).toLocaleString();
+
+        // Calculate duration
+        let durationStr = '-';
+        if (pos.durationMs > 0) {
+            const seconds = Math.floor(pos.durationMs / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+            if (days > 0) durationStr = `${days}天 ${hours % 24}時`;
+            else if (hours > 0) durationStr = `${hours}時 ${minutes % 60}分`;
+            else if (minutes > 0) durationStr = `${minutes}分 ${seconds % 60}秒`;
+            else durationStr = `${seconds}秒`;
+        }
+
+        const pnl = parseFloat(pos.pnl); // Net PNL
+        const realizedPnl = parseFloat(pos.realizedPnl); // PNL before commission
+        const commission = parseFloat(pos.commission);
+        const pnlClass = pnl >= 0 ? 'positive' : 'negative';
+        const sideClass = pos.openSide === 'BUY' ? 'buy' : 'sell';
+
+        tr.innerHTML = `
+            <td class="side-${sideClass}">${pos.openSide === 'BUY' ? '做多' : '做空'}</td>
+            <td>${formatNumber(pos.quantity, window.globalState.quantityPrecision)}</td>
+            <td>${formatCurrency(pos.avgOpenPrice, window.globalState.pricePrecision)}</td>
+            <td>${formatCurrency(pos.avgClosePrice, window.globalState.pricePrecision)}</td>
+            <td class="time">${openTime}</td>
+            <td class="time">${closeTime}</td>
+            <td class="duration">${durationStr}</td>
+            <td>${formatCurrency(realizedPnl)}</td>
+            <td>${formatCurrency(commission)} (${pos.commissionAsset})</td>
+            <td class="pnl-${pnlClass}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+}
 
 // --- Initialization Function ---
 async function initializeApp() {
@@ -194,56 +276,51 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("前端 DOM 已載入");
     // Ensure all modules are loaded before initializing
     // The script tags in HTML ensure the order
-    initializeApp().then(() => { // Wait for initializeApp to potentially finish async ops
-        // Load initial history data (since checkbox is checked by default)
-        // Use setTimeout to ensure chart and other modules are fully ready
-        setTimeout(loadInitialPositionHistory, 500); // <--- 調用新的加載函數
-
-        // Add change listener for the checkbox
+    initializeApp().then(() => {
         const showHistoryCheckbox = document.getElementById('showHistoryCheckbox');
-        const showHistoryLabel = document.querySelector('label[for="showHistoryCheckbox"]'); // 獲取 label
-        // *** 修改 Checkbox Label (確保文字正確) ***
-        if (showHistoryLabel) {
-            // 使用 textContent 來獲取並修改文字節點
-            let labelTextNode = null;
-            for (const node of showHistoryLabel.childNodes) {
-                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                    labelTextNode = node;
-                    break;
-                }
-            }
-            if (labelTextNode) {
-                labelTextNode.textContent = ' 顯示倉位歷史紀錄'; // 確保文字是倉位歷史
-            } else {
-                 console.warn("無法精確修改歷史紀錄 checkbox 的 label 文字");
-            }
+        const historyContainer = document.getElementById('position-history-container');
+
+        // Initial load if checkbox is checked
+        if (showHistoryCheckbox && showHistoryCheckbox.checked) {
+            if (historyContainer) historyContainer.style.display = 'block';
+            // Use setTimeout to ensure chart and other modules are fully ready
+            setTimeout(loadAndRenderPositionHistory, 500);
+        } else if (historyContainer) {
+            historyContainer.style.display = 'none'; // Hide if unchecked initially
         }
 
-
-        if (showHistoryCheckbox) {
+        // Add change listener for the checkbox
+        if (showHistoryCheckbox && historyContainer) {
             showHistoryCheckbox.addEventListener('change', (event) => {
-                if (event.target.checked) {
-                    // Show markers using stored data
-                    // *** 修改調用的圖表函數名 ***
-                    if (typeof window.applyPositionHistoryMarks === 'function') { // <--- 調用新的圖表函數
-                        console.log("Checkbox checked: Applying position history marks...");
-                        window.applyPositionHistoryMarks(window.globalState.positionHistoryData); // <--- 傳遞新的數據
+                const isChecked = event.target.checked;
+                historyContainer.style.display = isChecked ? 'block' : 'none';
+
+                if (isChecked) {
+                    console.log("Checkbox checked: Showing position history container.");
+                    // Load data only if it hasn't been loaded yet or needs refresh
+                    // Simple check: load if the container was previously empty or showing error/loading
+                    const needsLoad = !window.globalState.positionHistoryData || window.globalState.positionHistoryData.length === 0 || historyContainer.querySelector('p');
+                    if (needsLoad) {
+                         console.log("Loading position history data...");
+                         loadAndRenderPositionHistory(); // Load and render
                     } else {
-                        console.error("window.applyPositionHistoryMarks function not found.");
+                         console.log("Position history data already loaded.");
+                         // Optional: Re-apply chart markers if needed
+                         if (typeof window.applyPositionHistoryMarks === 'function') {
+                             window.applyPositionHistoryMarks(window.globalState.positionHistoryData);
+                         }
                     }
                 } else {
-                    // Hide markers
-                    // *** 修改調用的圖表函數名 ***
-                    if (typeof window.removePositionHistoryMarks === 'function') { // <--- 調用新的圖表函數
-                         console.log("Checkbox unchecked: Removing position history marks...");
+                    console.log("Checkbox unchecked: Hiding position history container.");
+                    // Optional: Remove chart markers if needed
+                    if (typeof window.removePositionHistoryMarks === 'function') {
                         window.removePositionHistoryMarks();
-                    } else {
-                        console.error("window.removePositionHistoryMarks function not found.");
                     }
                 }
             });
         } else {
-            console.warn("找不到 #showHistoryCheckbox 元素");
+            if (!showHistoryCheckbox) console.warn("找不到 #showHistoryCheckbox 元素");
+            if (!historyContainer) console.warn("找不到 #position-history-container 元素");
         }
     });
 });
