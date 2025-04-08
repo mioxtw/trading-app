@@ -158,6 +158,12 @@ body {
     text-align: right;
 }
 
+/* 確保 #quantity-input 靠右對齊 */
+#quantity-input {
+    text-align: right;
+    /* 移除 max-width: none; 恢復受通用規則限制 */
+}
+
 .panel-row .leverage-section {
     display: flex;
     align-items: center;

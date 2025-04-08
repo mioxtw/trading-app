@@ -6,6 +6,8 @@ const leverageInput = document.getElementById('leverage-input');
 const setLeverageBtn = document.getElementById('set-leverage-btn');
 const availableBalanceSpan = document.getElementById('available-balance');
 const quantityInput = document.getElementById('quantity-input');
+const quantitySlider = document.getElementById('quantity-slider'); // 新增：獲取拉桿元素
+const quantityPercentageSpan = document.getElementById('quantity-percentage'); // 新增：獲取百分比顯示元素
 const reduceOnlyCheckbox = document.getElementById('reduce-only-checkbox');
 const maxOrderSizeSpan = document.getElementById('max-order-size');
 const marginRequiredSpan = document.getElementById('margin-required');
@@ -133,7 +135,7 @@ function updateAccountPanel(balanceData, positionRiskData) {
                 positionDetailsDiv.innerHTML = `
                     <div class="panel-row"><label>持倉數量 (${quantityUnitSpan?.textContent || '?'})</label><span class="value">${formatNumber(posAmt, window.globalState.quantityPrecision)}</span></div>
                     <div class="panel-row"><label>開倉價格 (USDT)</label><span class="value">${formatCurrency(entryPrice, window.globalState.pricePrecision)}</span></div>
-                    <div class="panel-row"><label>標記價格 (USDT)</label><span class="value">${formatCurrency(markPrice, window.globalState.pricePrecision)}</span></div>
+                    <div class="panel-row"><label>標記價格 (USDT)</label><span class="value" id="position-mark-price">${formatCurrency(markPrice, window.globalState.pricePrecision)}</span></div>
                     <div class="panel-row"><label>未實現盈虧 (USDT)</label><span class="pnl-container"><span id="realtime-pnl-value" class="value position-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)}</span> (<span id="realtime-pnl-percent" class="${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%</span>)</span></div>
                     <div class="panel-row"><label>預估強平價 (USDT)</label><span class="value">${formatCurrency(liqPrice, window.globalState.pricePrecision)}</span></div>
                     <div class="panel-row"><label>保證金 (USDT)</label><span class="value">${formatCurrency(estimatedMargin)}</span></div>
@@ -352,7 +354,33 @@ function updateCalculations() {
         // Consider a buffer (e.g., 95%) for available balance
         maxOrderSize = (window.globalState.usdtBalance * 0.95 * leverage) / price;
     }
-    maxOrderSizeSpan.textContent = `${formatNumber(maxOrderSize, window.globalState.quantityPrecision)} ${quantityUnitSpan.textContent || '...'}`;
+    maxOrderSizeSpan.textContent = `${formatNumber(maxOrderSize, window.globalState.quantityPrecision)} ${quantityUnitSpan?.textContent || '...'}`;
+    // 新增：當最大可開數量更新時，也可能需要更新拉桿狀態（如果數量輸入框有值）
+    updateSliderFromQuantity(); // 調用反向更新函數
+}
+
+// --- 新增/恢復：更新交易面板上的交易對符號並觸發訂閱 ---
+function updateTradePanelSymbol() {
+    if (!tradeSymbolSpan || !window.globalState) {
+        console.error("無法更新交易面板符號：缺少元素或全局狀態。");
+        return;
+    }
+    const currentSymbol = window.globalState.currentSymbol;
+    tradeSymbolSpan.textContent = currentSymbol;
+
+    // 更新數量輸入框旁邊的單位 (例如 BTC)
+    if (quantityUnitSpan && currentSymbol.endsWith('USDT')) {
+        const baseAsset = currentSymbol.replace('USDT', '');
+        quantityUnitSpan.textContent = baseAsset;
+    }
+
+    // 觸發市場數據訂閱 (在 market.js 中定義)
+    if (typeof subscribeToMarket === 'function') {
+        console.log(`[trade.js] updateTradePanelSymbol: 觸發訂閱 ${currentSymbol}`);
+        subscribeToMarket(currentSymbol);
+    } else {
+        console.error("[trade.js] updateTradePanelSymbol: subscribeToMarket 函數未找到！");
+    }
 }
 
 // --- Handle Close Position ---
@@ -807,11 +835,45 @@ function attachTradeEventListeners() {
     if (quantityInput) {
         quantityInput.addEventListener('input', () => {
             // 檢查輸入值是否小於 0
-            if (parseFloat(quantityInput.value) < 0) {
-                quantityInput.value = '0'; // 如果是負數，重置為 0
+            const currentValue = parseFloat(quantityInput.value);
+            if (isNaN(currentValue) || currentValue < 0) {
+                quantityInput.value = '0'; // 如果是負數或無效，重置為 0
             }
-            updateCalculations(); // 觸發保證金等計算更新
+            // 反向更新拉桿
+            updateSliderFromQuantity();
+            // 觸發保證金等計算更新
+            updateCalculations();
         });
+    }
+    // 新增：為拉桿添加事件監聽器
+    // 為拉桿添加事件監聽器
+    if (quantitySlider && quantityInput && maxOrderSizeSpan && quantityPercentageSpan) {
+        quantitySlider.addEventListener('input', () => {
+            const percentage = parseInt(quantitySlider.value);
+            // 無論如何都先更新百分比顯示
+            quantityPercentageSpan.textContent = `${percentage}%`;
+
+            // 從 maxOrderSizeSpan 獲取最大可開數量文本
+            const maxSizeText = maxOrderSizeSpan.textContent || '0';
+            // 解析出數值部分
+            const maxSizeMatch = maxSizeText.match(/^(-?\d+(\.\d+)?)/);
+            // 如果解析成功，則使用解析值，否則設為 0
+            const maxSize = maxSizeMatch ? parseFloat(maxSizeMatch[1]) : 0;
+
+            // 只有在 maxSize 大於 0 時才計算和更新數量
+            if (maxSize > 0 && window.globalState?.quantityPrecision !== undefined) {
+                const calculatedQuantity = (maxSize * percentage) / 100;
+                // 恢復使用 formatNumber，確保顯示符合精度要求
+                quantityInput.value = formatNumber(calculatedQuantity, window.globalState.quantityPrecision);
+            } else {
+                // 如果最大可開為 0 或無效，數量輸入框設為 0 (格式化後)
+                quantityInput.value = formatNumber(0, window.globalState?.quantityPrecision ?? 3);
+            }
+            // 觸發保證金等計算更新
+            updateCalculations();
+        });
+    } else {
+         console.error("Could not attach slider listener - one or more required elements are missing.");
     }
     if (buyLongBtn) buyLongBtn.addEventListener('click', () => placeMarketOrder('BUY'));
     if (sellShortBtn) sellShortBtn.addEventListener('click', () => placeMarketOrder('SELL'));
@@ -838,10 +900,17 @@ function updateRealtimePnl(markPrice) {
 
     const pnlValueSpan = document.getElementById('realtime-pnl-value');
     const pnlPercentSpan = document.getElementById('realtime-pnl-percent');
+    const markPriceSpan = document.getElementById('position-mark-price'); // Get the mark price span
 
-    if (!currentPosition || !pnlValueSpan || !pnlPercentSpan) {
-        // If no position or elements not found, ensure display is cleared or default
-        // (updateAccountPanel handles the initial 'no position' state)
+    if (!currentPosition) {
+        // If no position, ensure mark price display is also cleared or default
+        if (markPriceSpan) markPriceSpan.textContent = '-.---'; // Or some default value
+        return;
+    }
+
+    // Check if all required elements are found
+    if (!pnlValueSpan || !pnlPercentSpan || !markPriceSpan) {
+        console.warn("One or more PNL/Mark Price display elements not found.");
         return;
     }
 
@@ -857,12 +926,21 @@ function updateRealtimePnl(markPrice) {
         }
     }
 
-
     if (isNaN(posAmt) || isNaN(entryPrice) || isNaN(markPrice) || markPrice <= 0 || isNaN(estimatedMargin)) {
-        console.warn("Cannot update realtime PNL due to invalid data:", { posAmt, entryPrice, markPrice, estimatedMargin });
-        return; // Invalid data for calculation
+        console.warn("Cannot update realtime PNL/Mark Price due to invalid data:", { posAmt, entryPrice, markPrice, estimatedMargin });
+        // Optionally update mark price display even if PNL calc fails
+        if (markPriceSpan && !isNaN(markPrice)) {
+             markPriceSpan.textContent = formatCurrency(markPrice, window.globalState.pricePrecision);
+        } else if (markPriceSpan) {
+             markPriceSpan.textContent = '-.---'; // Show default if markPrice is invalid
+        }
+        return; // Invalid data for PNL calculation
     }
 
+    // *** Update Mark Price Display ***
+    markPriceSpan.textContent = formatCurrency(markPrice, window.globalState.pricePrecision);
+
+    // Calculate PNL
     const pnl = (markPrice - entryPrice) * posAmt;
     const pnlPercent = estimatedMargin > 0 ? (pnl / estimatedMargin) * 100 : 0;
 
@@ -873,6 +951,38 @@ function updateRealtimePnl(markPrice) {
     // Update PNL percentage display
     pnlPercentSpan.textContent = `${pnlPercent >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%`;
     pnlPercentSpan.className = `${pnl >= 0 ? 'positive' : 'negative'}`; // Update class for color
+}
+
+// --- 新增：反向更新拉桿的輔助函數 ---
+function updateSliderFromQuantity() {
+    if (!quantityInput || !quantitySlider || !maxOrderSizeSpan || !quantityPercentageSpan || !window.globalState) return;
+
+    const currentQuantityText = quantityInput.value;
+    const currentQuantity = parseFloat(currentQuantityText);
+
+    // 從 maxOrderSizeSpan 獲取最大可開數量文本
+    const maxSizeText = maxOrderSizeSpan.textContent || '0';
+    const maxSizeMatch = maxSizeText.match(/^(-?\d+(\.\d+)?)/);
+    const maxSize = maxSizeMatch ? parseFloat(maxSizeMatch[1]) : 0;
+
+    if (isNaN(currentQuantity) || currentQuantity < 0) {
+        // 如果輸入無效或為負數，將拉桿重置為 0
+        quantitySlider.value = 0;
+        quantityPercentageSpan.textContent = '0%';
+        return;
+    }
+
+    if (maxSize > 0) {
+        let percentage = (currentQuantity / maxSize) * 100;
+        // 限制百分比在 0 到 100 之間
+        percentage = Math.max(0, Math.min(100, percentage));
+        quantitySlider.value = Math.round(percentage); // 拉桿通常是整數
+        quantityPercentageSpan.textContent = `${Math.round(percentage)}%`;
+    } else {
+        // 如果最大可開為 0 或無效，拉桿也重置為 0
+        quantitySlider.value = 0;
+        quantityPercentageSpan.textContent = '0%';
+    }
 }
 
 

@@ -71,8 +71,15 @@
             </div>
             <div class="panel-row">
                 <label for="quantity-input">數量</label>
-                <input type="number" id="quantity-input" step="0.001" min="0" placeholder="0.000">
-                <span style="margin-left: 5px;">BTC</span>
+                <div class="quantity-group" style="display: flex; align-items: center;"> <!-- 新增包裹容器 -->
+                    <input type="number" id="quantity-input" step="0.001" min="0" placeholder="0.000">
+                    <span style="margin-left: 5px;">BTC</span>
+                </div>
+            </div>
+            <div class="panel-row">
+                <label for="quantity-slider">比例</label>
+                <input type="range" id="quantity-slider" min="0" max="100" value="0" step="1" style="flex-grow: 1; margin: 0 10px;">
+                <span id="quantity-percentage" class="value">0%</span>
             </div>
              <div class="order-options">
                  <label><input type="checkbox" id="reduce-only-checkbox"> 只減倉</label>
