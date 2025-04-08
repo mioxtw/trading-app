@@ -33,12 +33,12 @@ router.get('/config', (req, res) => {
 
 // 獲取 K 線數據
 router.get('/kline', asyncHandler(async (req, res) => {
-    const { symbol, interval, limit } = req.query;
+    const { symbol, interval } = req.query; // 移除 limit
     if (!symbol || !interval) {
         return res.status(400).json({ success: false, message: '缺少 symbol 或 interval 參數' });
     }
-    // 後端可以返回原始幣安格式，讓前端處理映射
-    const data = await binanceService.getKlineData(symbol, interval, limit);
+    // 調用修改後的服務函數，該函數內部處理獲取大量數據
+    const data = await binanceService.getKlineData(symbol, interval);
     res.json({ success: true, data });
 }));
 

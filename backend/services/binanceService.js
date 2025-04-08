@@ -91,8 +91,80 @@ async function makeRequest(endpoint, method = 'GET', params = {}, isPublic = fal
 
 // --- 具體功能函數 (使用修改後的 makeRequest) ---
 
-async function getKlineData(symbol, interval, limit = 500) {
-    return makeRequest('/fapi/v1/klines', 'GET', { symbol, interval, limit }, true); // 公開接口
+// 修改：獲取 K 線數據 (支持獲取大量歷史數據，例如 6 個月)
+async function getKlineData(symbol, interval) {
+    console.log(`正在獲取 ${symbol} (${interval}) 的過去 6 個月 K 線數據...`);
+    const allKlines = [];
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    let currentStartTime = sixMonthsAgo.getTime();
+    const now = Date.now();
+    const maxLimit = 1500; // 幣安 API 每次請求的最大 K 線數量
+    const delayBetweenRequests = 300; // 請求之間的延遲（毫秒），避免觸發速率限制
+
+    try {
+        while (currentStartTime < now) {
+            console.log(`  查詢區間 starting from: ${new Date(currentStartTime).toISOString()}`);
+
+            const params = {
+                symbol: symbol,
+                interval: interval,
+                startTime: currentStartTime,
+                limit: maxLimit
+            };
+
+            const klinesChunk = await makeRequest('/fapi/v1/klines', 'GET', params, true); // 公開接口
+
+            if (Array.isArray(klinesChunk) && klinesChunk.length > 0) {
+                console.log(`    獲取到 ${klinesChunk.length} 根 K 線`);
+
+                // 過濾掉可能與上一批次重複的第一根 K 線 (如果 open time 相同)
+                if (allKlines.length > 0 && klinesChunk[0][0] === allKlines[allKlines.length - 1][0]) {
+                    klinesChunk.shift(); // 移除重複的第一根
+                    console.log(`    移除重複的 K 線後剩餘 ${klinesChunk.length} 根`);
+                }
+
+                if (klinesChunk.length > 0) {
+                    allKlines.push(...klinesChunk);
+                    // 更新下一次查詢的 startTime 為最後一根 K 線的開盤時間 + 1ms
+                    // 幣安返回的 K 線數據 [openTime, open, high, low, close, volume, closeTime, ...]
+                    const lastCandleOpenTime = klinesChunk[klinesChunk.length - 1][0];
+                    currentStartTime = lastCandleOpenTime + 1; // 設置為下一根 K 線可能的開始時間
+                } else {
+                     // 如果移除重複後沒有 K 線了，說明已經獲取完畢
+                     console.log(`    移除重複後無新 K 線，結束查詢。`);
+                     break;
+                }
+
+
+                // 如果獲取的數量小於請求的最大數量，說明已經是最後的數據了
+                if (klinesChunk.length < maxLimit -1) { // 減 1 是因為可能移除了重複的
+                    console.log(`    獲取數量 (${klinesChunk.length}) 小於請求限制 (${maxLimit})，判斷為最後數據，結束查詢。`);
+                    break;
+                }
+            } else {
+                // 如果沒有返回數據，說明該時間點之後沒有更多數據了
+                console.log(`    此區間無 K 線數據，結束查詢。`);
+                break;
+            }
+
+            // 添加延遲
+            await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
+
+        }
+
+        console.log(`總共獲取 ${allKlines.length} 根 K 線數據。`);
+        return allKlines;
+
+    } catch (error) {
+        console.error(`獲取 K 線數據時出錯 (${symbol}, ${interval}):`, error);
+        // 即使出錯，也可能返回部分數據
+        if (allKlines.length > 0) {
+             console.warn("K 線數據獲取過程中斷，將返回已獲取的部分數據。");
+             return allKlines;
+        }
+        throw error; // 如果完全沒有數據則拋出錯誤
+    }
 }
 
 async function getAccountBalance() {
