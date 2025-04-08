@@ -359,6 +359,30 @@ function updateCalculations() {
     updateSliderFromQuantity(); // 調用反向更新函數
 }
 
+// --- 新增/恢復：更新交易面板上的交易對符號並觸發訂閱 ---
+function updateTradePanelSymbol() {
+    if (!tradeSymbolSpan || !window.globalState) {
+        console.error("無法更新交易面板符號：缺少元素或全局狀態。");
+        return;
+    }
+    const currentSymbol = window.globalState.currentSymbol;
+    tradeSymbolSpan.textContent = currentSymbol;
+
+    // 更新數量輸入框旁邊的單位 (例如 BTC)
+    if (quantityUnitSpan && currentSymbol.endsWith('USDT')) {
+        const baseAsset = currentSymbol.replace('USDT', '');
+        quantityUnitSpan.textContent = baseAsset;
+    }
+
+    // 觸發市場數據訂閱 (在 market.js 中定義)
+    if (typeof subscribeToMarket === 'function') {
+        console.log(`[trade.js] updateTradePanelSymbol: 觸發訂閱 ${currentSymbol}`);
+        subscribeToMarket(currentSymbol);
+    } else {
+        console.error("[trade.js] updateTradePanelSymbol: subscribeToMarket 函數未找到！");
+    }
+}
+
 // --- Handle Close Position ---
 async function handleClosePosition(closeFraction) {
      if (!window.globalState) {
