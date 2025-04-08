@@ -6,6 +6,8 @@ const leverageInput = document.getElementById('leverage-input');
 const setLeverageBtn = document.getElementById('set-leverage-btn');
 const availableBalanceSpan = document.getElementById('available-balance');
 const quantityInput = document.getElementById('quantity-input');
+const quantitySlider = document.getElementById('quantity-slider'); // 新增：獲取拉桿元素
+const quantityPercentageSpan = document.getElementById('quantity-percentage'); // 新增：獲取百分比顯示元素
 const reduceOnlyCheckbox = document.getElementById('reduce-only-checkbox');
 const maxOrderSizeSpan = document.getElementById('max-order-size');
 const marginRequiredSpan = document.getElementById('margin-required');
@@ -352,7 +354,9 @@ function updateCalculations() {
         // Consider a buffer (e.g., 95%) for available balance
         maxOrderSize = (window.globalState.usdtBalance * 0.95 * leverage) / price;
     }
-    maxOrderSizeSpan.textContent = `${formatNumber(maxOrderSize, window.globalState.quantityPrecision)} ${quantityUnitSpan.textContent || '...'}`;
+    maxOrderSizeSpan.textContent = `${formatNumber(maxOrderSize, window.globalState.quantityPrecision)} ${quantityUnitSpan?.textContent || '...'}`;
+    // 新增：當最大可開數量更新時，也可能需要更新拉桿狀態（如果數量輸入框有值）
+    updateSliderFromQuantity(); // 調用反向更新函數
 }
 
 // --- Handle Close Position ---
@@ -807,11 +811,45 @@ function attachTradeEventListeners() {
     if (quantityInput) {
         quantityInput.addEventListener('input', () => {
             // 檢查輸入值是否小於 0
-            if (parseFloat(quantityInput.value) < 0) {
-                quantityInput.value = '0'; // 如果是負數，重置為 0
+            const currentValue = parseFloat(quantityInput.value);
+            if (isNaN(currentValue) || currentValue < 0) {
+                quantityInput.value = '0'; // 如果是負數或無效，重置為 0
             }
-            updateCalculations(); // 觸發保證金等計算更新
+            // 反向更新拉桿
+            updateSliderFromQuantity();
+            // 觸發保證金等計算更新
+            updateCalculations();
         });
+    }
+    // 新增：為拉桿添加事件監聽器
+    // 為拉桿添加事件監聽器
+    if (quantitySlider && quantityInput && maxOrderSizeSpan && quantityPercentageSpan) {
+        quantitySlider.addEventListener('input', () => {
+            const percentage = parseInt(quantitySlider.value);
+            // 無論如何都先更新百分比顯示
+            quantityPercentageSpan.textContent = `${percentage}%`;
+
+            // 從 maxOrderSizeSpan 獲取最大可開數量文本
+            const maxSizeText = maxOrderSizeSpan.textContent || '0';
+            // 解析出數值部分
+            const maxSizeMatch = maxSizeText.match(/^(-?\d+(\.\d+)?)/);
+            // 如果解析成功，則使用解析值，否則設為 0
+            const maxSize = maxSizeMatch ? parseFloat(maxSizeMatch[1]) : 0;
+
+            // 只有在 maxSize 大於 0 時才計算和更新數量
+            if (maxSize > 0 && window.globalState?.quantityPrecision !== undefined) {
+                const calculatedQuantity = (maxSize * percentage) / 100;
+                // 恢復使用 formatNumber，確保顯示符合精度要求
+                quantityInput.value = formatNumber(calculatedQuantity, window.globalState.quantityPrecision);
+            } else {
+                // 如果最大可開為 0 或無效，數量輸入框設為 0 (格式化後)
+                quantityInput.value = formatNumber(0, window.globalState?.quantityPrecision ?? 3);
+            }
+            // 觸發保證金等計算更新
+            updateCalculations();
+        });
+    } else {
+         console.error("Could not attach slider listener - one or more required elements are missing.");
     }
     if (buyLongBtn) buyLongBtn.addEventListener('click', () => placeMarketOrder('BUY'));
     if (sellShortBtn) sellShortBtn.addEventListener('click', () => placeMarketOrder('SELL'));
@@ -873,6 +911,38 @@ function updateRealtimePnl(markPrice) {
     // Update PNL percentage display
     pnlPercentSpan.textContent = `${pnlPercent >= 0 ? '+' : ''}${formatCurrency(pnlPercent)}%`;
     pnlPercentSpan.className = `${pnl >= 0 ? 'positive' : 'negative'}`; // Update class for color
+}
+
+// --- 新增：反向更新拉桿的輔助函數 ---
+function updateSliderFromQuantity() {
+    if (!quantityInput || !quantitySlider || !maxOrderSizeSpan || !quantityPercentageSpan || !window.globalState) return;
+
+    const currentQuantityText = quantityInput.value;
+    const currentQuantity = parseFloat(currentQuantityText);
+
+    // 從 maxOrderSizeSpan 獲取最大可開數量文本
+    const maxSizeText = maxOrderSizeSpan.textContent || '0';
+    const maxSizeMatch = maxSizeText.match(/^(-?\d+(\.\d+)?)/);
+    const maxSize = maxSizeMatch ? parseFloat(maxSizeMatch[1]) : 0;
+
+    if (isNaN(currentQuantity) || currentQuantity < 0) {
+        // 如果輸入無效或為負數，將拉桿重置為 0
+        quantitySlider.value = 0;
+        quantityPercentageSpan.textContent = '0%';
+        return;
+    }
+
+    if (maxSize > 0) {
+        let percentage = (currentQuantity / maxSize) * 100;
+        // 限制百分比在 0 到 100 之間
+        percentage = Math.max(0, Math.min(100, percentage));
+        quantitySlider.value = Math.round(percentage); // 拉桿通常是整數
+        quantityPercentageSpan.textContent = `${Math.round(percentage)}%`;
+    } else {
+        // 如果最大可開為 0 或無效，拉桿也重置為 0
+        quantitySlider.value = 0;
+        quantityPercentageSpan.textContent = '0%';
+    }
 }
 
 
