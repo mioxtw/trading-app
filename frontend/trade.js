@@ -522,20 +522,25 @@ function makePriceEditable(spanElement) {
             return; // Not enough data or invalid input
         }
 
-        // Basic logical validation (same as in handleInputComplete)
+        // Basic logical validation (using latest price for immediate feedback)
         let validationError = null;
-        if (posAmt > 0) { // Long
-            if (type === 'tp' && newPriceNum <= entryPrice) validationError = "低於開倉";
-            else if (type === 'sl' && newPriceNum >= entryPrice) validationError = "高於開倉";
-        } else { // Short
-            if (type === 'tp' && newPriceNum >= entryPrice) validationError = "高於開倉";
-            else if (type === 'sl' && newPriceNum <= entryPrice) validationError = "低於開倉";
+        const latestPrice = window.globalState.currentCandle?.close; // 獲取最新 K 線收盤價
+
+        if (!isNaN(latestPrice) && latestPrice > 0) { // 只有在獲取到有效最新價時才進行此驗證
+            if (posAmt > 0) { // Long
+                if (type === 'tp' && newPriceNum <= latestPrice) validationError = "低於最新價";
+                else if (type === 'sl' && newPriceNum >= latestPrice) validationError = "高於最新價";
+            } else { // Short
+                if (type === 'tp' && newPriceNum >= latestPrice) validationError = "高於最新價";
+                else if (type === 'sl' && newPriceNum <= latestPrice) validationError = "低於最新價";
+            }
         }
+        // 如果無法獲取最新價，則跳過此即時驗證，最終提交時仍會驗證
 
         if (validationError) {
             infoSpan.textContent = `(${validationError})`;
             infoSpan.style.color = 'orange';
-            return;
+            // 不 return，仍然計算 PNL
         }
 
         const profitAmount = (newPriceNum - entryPrice) * posAmt;
@@ -602,14 +607,22 @@ function makePriceEditable(spanElement) {
         const priceToSend = (isEmptyInput || newPriceNum === 0) ? 0 : newPriceNum;
 
         // --- Logical Price Validation (only if setting a price, not cancelling) ---
-        if (priceToSend !== 0 && !isNaN(entryPrice) && !isNaN(posAmt) && posAmt !== 0) {
+        if (priceToSend !== 0 && !isNaN(posAmt) && posAmt !== 0) {
+            const latestPrice = window.globalState.currentCandle?.close; // 獲取最新 K 線收盤價
+            if (isNaN(latestPrice) || latestPrice <= 0) { // 檢查 latestPrice 是否有效
+                updateStatus("無法獲取最新價格，無法驗證止盈止損", 'warning');
+                if (document.body.contains(spanElement)) spanElement.textContent = currentPriceText; // Revert display
+                console.log(`價格邏輯驗證失敗: 無法獲取有效的最新價格 (${latestPrice})`);
+                return;
+            }
+
             let validationError = null;
             if (posAmt > 0) { // Long position
-                if (type === 'tp' && priceToSend <= entryPrice) validationError = "多單止盈價必須高於開倉價";
-                else if (type === 'sl' && priceToSend >= entryPrice) validationError = "多單止損價必須低於開倉價";
+                if (type === 'tp' && priceToSend <= latestPrice) validationError = "多單止盈價必須高於最新價"; // 改用 latestPrice
+                else if (type === 'sl' && priceToSend >= latestPrice) validationError = "多單止損價必須低於最新價"; // 改用 latestPrice
             } else { // Short position (posAmt < 0)
-                if (type === 'tp' && priceToSend >= entryPrice) validationError = "空單止盈價必須低於開倉價";
-                else if (type === 'sl' && priceToSend <= entryPrice) validationError = "空單止損價必須高於開倉價";
+                if (type === 'tp' && priceToSend >= latestPrice) validationError = "空單止盈價必須低於最新價"; // 改用 latestPrice
+                else if (type === 'sl' && priceToSend <= latestPrice) validationError = "空單止損價必須高於最新價"; // 改用 latestPrice
             }
 
             if (validationError) {
