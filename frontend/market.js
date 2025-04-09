@@ -111,7 +111,10 @@ function subscribeToMarket(symbol) {
 
 function handleBackendWsMessage(message) {
     if (!message || !message.type) return;
-    console.log("收到後端 WS 訊息:", message); // Log all messages
+    // 只記錄非 markPriceUpdate 和 marketUpdate 的訊息，以減少控制台噪音
+    if (message.type !== 'markPriceUpdate' && message.type !== 'marketUpdate') {
+        console.log("收到後端 WS 訊息:", message);
+    }
 
     switch (message.type) {
         case 'marketUpdate':
@@ -130,19 +133,9 @@ function handleBackendWsMessage(message) {
             // Trigger data refresh in trade.js
             console.log("偵測到用戶數據事件，從後端重新獲取數據...");
             if (typeof fetchInitialData === 'function') {
-                fetchInitialData(); // 更新當前持倉和餘額
+                fetchInitialData();
             } else {
                  console.error("fetchInitialData function not found for user update.");
-            }
-            // *** 新增：觸發倉位歷史紀錄的重新加載和渲染 ***
-            if (typeof loadAndRenderPositionHistory === 'function') {
-                // 延遲一點點執行，確保 fetchInitialData 可能的異步操作有機會先完成
-                // 並且避免短時間內重複加載（如果 checkbox 狀態也觸發了加載）
-                // 但對於 userUpdate，通常需要立即反應
-                console.log("用戶數據更新後，觸發倉位歷史紀錄加載...");
-                loadAndRenderPositionHistory();
-            } else {
-                console.error("loadAndRenderPositionHistory function not found for user update.");
             }
             break;
         case 'conditionalOrderUpdate': // Handle TP/SL updates

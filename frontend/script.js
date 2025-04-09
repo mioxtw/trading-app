@@ -261,7 +261,7 @@ async function initializeApp() {
     // 5. Initial update for trade panel symbol (from trade.js - might be redundant if WS connect triggers it)
     // This function also triggers the initial market subscription in market.js via WS connect
      if (typeof updateTradePanelSymbol === 'function') {
-         updateTradePanelSymbol();
+         // updateTradePanelSymbol(); // Moved to market.js WebSocket onopen handler
      } else {
          console.error("updateTradePanelSymbol function not found. Ensure trade.js is loaded before script.js");
      }

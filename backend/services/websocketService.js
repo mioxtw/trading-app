@@ -37,6 +37,21 @@ function initBackendWss(serverInstance) {
 
     backendWss.on('connection', (wsClient) => {
         console.log('前端 WebSocket 客戶端已連接');
+
+        // --- BEGIN ADDITION: Send current user stream status to new client ---
+        try {
+            const userStreamStatus = (userWs && userWs.readyState === WebSocket.OPEN) ? 'connected' : 'disconnected';
+            wsClient.send(JSON.stringify({
+                type: 'status',
+                context: 'userStream',
+                status: userStreamStatus
+            }));
+            console.log(`已發送初始 userStream 狀態 '${userStreamStatus}' 給新客戶端。`);
+        } catch (sendError) {
+            console.error("向新客戶端發送初始 userStream 狀態時出錯:", sendError);
+        }
+        // --- END ADDITION ---
+
         wsClient.on('message', (message) => {
             try {
                 const data = JSON.parse(message);
@@ -106,7 +121,7 @@ async function connectUserDataStream() {
         if (!keyData || !keyData.listenKey) { console.error("無法獲取 Listen Key"); broadcast({ type: 'error', message: '無法連接用戶數據流 (獲取密鑰失敗)' }); return; }
         listenKey = keyData.listenKey; console.log("Listen Key 已獲取");
         const streamUrl = `${wsBaseUrl}/ws/${listenKey}`; console.log(`正在連接幣安用戶數據流...`); userWs = new WebSocket(streamUrl);
-        userWs.on('open', () => { console.log('幣安用戶數據流已連接'); clearInterval(listenKeyInterval); listenKeyInterval = setInterval(async () => { if (listenKey) { await binanceService.keepAliveListenKey(listenKey); } else { console.warn("Listen Key 為空，無法發送 Keep Alive"); clearInterval(listenKeyInterval); } }, 30 * 60 * 1000); binanceService.keepAliveListenKey(listenKey); });
+        userWs.on('open', () => { console.log('幣安用戶數據流已連接'); broadcast({ type: 'status', context: 'userStream', status: 'connected' }); clearInterval(listenKeyInterval); listenKeyInterval = setInterval(async () => { if (listenKey) { await binanceService.keepAliveListenKey(listenKey); } else { console.warn("Listen Key 為空，無法發送 Keep Alive"); clearInterval(listenKeyInterval); } }, 30 * 60 * 1000); binanceService.keepAliveListenKey(listenKey); });
         userWs.on('message', (data) => { try { const message = JSON.parse(data.toString()); broadcast({ type: 'userUpdate', event: message.e, data: message }); if (message.e === 'listenKeyExpired') { console.warn("Listen Key 已過期，正在嘗試重新獲取..."); listenKey = null; clearInterval(listenKeyInterval); userWs.terminate(); userWs = null; setTimeout(connectUserDataStream, 1000); } } catch (e) { console.error('處理用戶數據錯誤:', e); } });
         userWs.on('error', (error) => { console.error('幣安用戶數據流錯誤:', error); broadcast({ type: 'error', message: '用戶數據流連接錯誤' }); });
         userWs.on('close', (code, reason) => { console.log(`幣安用戶數據流已關閉: ${code} ${reason}`); clearInterval(listenKeyInterval); userWs = null; });
