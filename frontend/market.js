@@ -111,7 +111,10 @@ function subscribeToMarket(symbol) {
 
 function handleBackendWsMessage(message) {
     if (!message || !message.type) return;
-    console.log("收到後端 WS 訊息:", message); // Log all messages
+    // 只記錄非 markPriceUpdate 和 marketUpdate 的訊息，以減少控制台噪音
+    if (message.type !== 'markPriceUpdate' && message.type !== 'marketUpdate') {
+        console.log("收到後端 WS 訊息:", message);
+    }
 
     switch (message.type) {
         case 'marketUpdate':
