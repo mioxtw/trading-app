@@ -92,8 +92,8 @@ function broadcast(data) {
 // --- 連接幣安市場數據 WebSocket ---
 function connectMarketStream(symbol) {
     // ... (此函數不變) ...
-    if (marketWs && marketWs.readyState === WebSocket.OPEN && currentSymbol === symbol) { console.log(`市場數據流 (${symbol}) 已連接`); return; }
-    if (marketWs) { console.log(`正在斷開舊的市場數據流 (${currentSymbol})...`); marketWs.terminate(); marketWs = null; }
+    if (marketWs && marketWs.readyState === WebSocket.OPEN && currentMarketSymbol === symbol) { console.log(`市場數據流 (${symbol}) 已連接`); return; }
+    if (marketWs) { console.log(`正在斷開舊的市場數據流 (${currentMarketSymbol})...`); marketWs.terminate(); marketWs = null; }
     currentMarketSymbol = symbol.toUpperCase(); // Use renamed variable
     const streamUrl = `${wsBaseUrl}/ws/${currentMarketSymbol.toLowerCase()}@aggTrade`;
     console.log(`正在連接幣安市場數據流: ${streamUrl}`);
