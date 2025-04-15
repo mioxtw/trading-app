@@ -91,25 +91,35 @@ async function makeRequest(endpoint, method = 'GET', params = {}, isPublic = fal
 
 // --- 具體功能函數 (使用修改後的 makeRequest) ---
 
-// 修改：獲取 K 線數據 (支持獲取大量歷史數據，例如 6 個月)
-async function getKlineData(symbol, interval) {
-    console.log(`正在獲取 ${symbol} (${interval}) 的過去 6 個月 K 線數據...`);
+// 修改：獲取 K 線數據 (支持指定時間範圍和獲取大量歷史數據)
+async function getKlineData(symbol, interval, startTime = null, endTime = null) {
+    const defaultLookbackMonths = 6;
+    const effectiveEndTime = endTime || Date.now(); // 如果未提供 endTime，則使用當前時間
+    let effectiveStartTime = startTime;
+
+    if (!effectiveStartTime) {
+        const startDate = new Date(effectiveEndTime);
+        startDate.setMonth(startDate.getMonth() - defaultLookbackMonths);
+        effectiveStartTime = startDate.getTime();
+        console.log(`正在獲取 ${symbol} (${interval}) 從 ${new Date(effectiveStartTime).toISOString()} 到 ${new Date(effectiveEndTime).toISOString()} 的 K 線數據 (預設 ${defaultLookbackMonths} 個月回溯)...`);
+    } else {
+        console.log(`正在獲取 ${symbol} (${interval}) 從 ${new Date(effectiveStartTime).toISOString()} 到 ${new Date(effectiveEndTime).toISOString()} 的 K 線數據...`);
+    }
+
     const allKlines = [];
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    let currentStartTime = sixMonthsAgo.getTime();
-    const now = Date.now();
+    let currentStartTime = effectiveStartTime;
     const maxLimit = 1500; // 幣安 API 每次請求的最大 K 線數量
     const delayBetweenRequests = 300; // 請求之間的延遲（毫秒），避免觸發速率限制
 
     try {
-        while (currentStartTime < now) {
+        while (currentStartTime < effectiveEndTime) {
             console.log(`  查詢區間 starting from: ${new Date(currentStartTime).toISOString()}`);
 
             const params = {
                 symbol: symbol,
                 interval: interval,
                 startTime: currentStartTime,
+                endTime: effectiveEndTime, // 添加 endTime 參數給 API
                 limit: maxLimit
             };
 
@@ -137,9 +147,10 @@ async function getKlineData(symbol, interval) {
                 }
 
 
-                // 如果獲取的數量小於請求的最大數量，說明已經是最後的數據了
-                if (klinesChunk.length < maxLimit -1) { // 減 1 是因為可能移除了重複的
-                    console.log(`    獲取數量 (${klinesChunk.length}) 小於請求限制 (${maxLimit})，判斷為最後數據，結束查詢。`);
+                // 如果獲取的數量小於請求的最大數量，或者最後一根 K 線的開盤時間已達到或超過 endTime，說明已經是最後的數據了
+                const lastCandleOpenTimeInChunk = klinesChunk.length > 0 ? klinesChunk[klinesChunk.length - 1][0] : 0;
+                if (klinesChunk.length < maxLimit -1 || (lastCandleOpenTimeInChunk > 0 && lastCandleOpenTimeInChunk >= effectiveEndTime)) {
+                    console.log(`    獲取數量 (${klinesChunk.length}) 小於限制 (${maxLimit}) 或已達結束時間，判斷為最後數據，結束查詢。`);
                     break;
                 }
             } else {
@@ -408,6 +419,26 @@ async function getTradeHistory(options) {
     return makeRequest('/fapi/v1/userTrades', 'GET', params, false);
 }
 
+// --- 新增：獲取指定交易對的未結訂單 ---
+async function getOpenOrders(symbol) {
+   if (!symbol) {
+       throw new Error("獲取未結訂單需要指定 symbol");
+   }
+   console.log(`正在獲取 ${symbol} 的未結訂單...`);
+   // /fapi/v1/openOrders 是私有 GET 請求
+   return makeRequest('/fapi/v1/openOrders', 'GET', { symbol }, false);
+}
+
+// --- 新增：取消指定訂單 ---
+async function cancelOrder(symbol, orderId) {
+   if (!symbol || !orderId) {
+       throw new Error("取消訂單需要指定 symbol 和 orderId");
+   }
+   console.log(`正在取消訂單: symbol=${symbol}, orderId=${orderId}`);
+   // /fapi/v1/order 是私有 DELETE 請求
+   return makeRequest('/fapi/v1/order', 'DELETE', { symbol, orderId }, false);
+}
+
 // 修改：整理成交紀錄為倉位歷史 (查詢過去 6 個月，每 7 天查詢一次)
 async function getPositionHistory(symbol) { // 移除 limit, startTime, endTime 參數
     console.log(`正在整理 ${symbol} 的過去 6 個月倉位歷史紀錄...`);
@@ -612,4 +643,6 @@ module.exports = {
     placeOrCancelConditionalOrder,
     getTradeHistory,
     getPositionHistory, // <--- 導出新函數
+    getOpenOrders, // <-- Export new function
+    cancelOrder,   // <-- Export new function
 };

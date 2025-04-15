@@ -106,16 +106,24 @@
             </div>
         </div>
 
-        <!-- Position Info -->
-        <div class="position-info panel-section">
-            <!-- ... (持倉顯示區塊不變) ... -->
-             <h5>持有倉位 (<span id="position-count">0</span>)</h5>
+        <!-- Position Info (Apply common info-box style) -->
+        <div id="position-info" class="panel-section info-box"> <!-- Added info-box class -->
+            <h5>持有倉位 (<span id="position-count">0</span>)</h5>
             <div id="position-details">
                 <div class="no-position">沒有持倉</div>
             </div>
-            <div id="position-actions-container" class="position-actions" style="display: none;"> <!-- 新增 ID 並預設隱藏 -->
+            <div id="position-actions-container" class="position-actions" style="display: none;">
                 <button id="close-all-btn" class="action-btn">全平倉</button>
                 <button id="close-half-btn" class="action-btn">平一半</button>
+            </div>
+        </div>
+
+        <!-- Open Orders Section (Apply common info-box style) -->
+        <div id="open-orders-container" class="panel-section info-box"> <!-- Added info-box class -->
+            <h5>當前委託 (<span id="open-orders-count">0</span>)</h5>
+            <div id="open-orders-list">
+                <!-- Open orders will be rendered here by JavaScript -->
+                <p>正在加載委託...</p>
             </div>
         </div>
 

@@ -177,6 +177,9 @@ function renderPositionHistory(historyData) {
     table.appendChild(thead);
 
     const tbody = document.createElement('tbody');
+    // Sort history data by closeTime descending (newest first)
+    historyData.sort((a, b) => b.closeTime - a.closeTime);
+
     historyData.forEach(pos => {
         const tr = document.createElement('tr');
 

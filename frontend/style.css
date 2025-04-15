@@ -117,15 +117,11 @@ body {
 
 
 .panel-section {
-    margin-bottom: 12px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #eee;
+   margin-bottom: 12px;
+   /* Removed padding-bottom and border-bottom, will be handled by info-box or specific sections */
 }
 
-.panel-section:last-child {
-    border-bottom: none;
-    margin-bottom: 0;
-}
+/* Removed .panel-section:last-child rule as margin/border is handled differently now */
 
 .panel-row {
     display: flex;
@@ -212,33 +208,35 @@ body {
     margin: 0;
 }
 
-/* 讓 label 和 value 在同一行且對齊 */
-.position-info .panel-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px; /* 增加行間距 */
+/* Styles for rows within info boxes (like position details) */
+.info-box .panel-row { /* Applied to rows inside .info-box */
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   margin-bottom: 4px; /* Consistent row spacing */
+   padding: 2px 0; /* Add slight vertical padding */
 }
 
-.position-info .panel-row label {
-    margin-right: 10px; /* label 和 value 之間的間距 */
-    flex-shrink: 0; /* 防止 label 被壓縮 */
+.info-box .panel-row label {
+   margin-right: 10px;
+   flex-shrink: 0;
+   color: #555; /* Match general label color */
 }
 
-.position-info .panel-row .value {
-    font-weight: bold;
-    text-align: right; /* value 靠右 */
-    flex-grow: 1; /* 佔據剩餘空間 */
+.info-box .panel-row .value {
+   font-weight: bold;
+   text-align: right;
+   flex-grow: 1;
 }
 
-.position-info .panel-row .editable-price {
-     flex-grow: 0; /* 不要讓可編輯價格佔滿剩餘空間 */
-     margin-left: 5px; /* 與 label 的最小間距 */
+.info-box .panel-row .editable-price {
+    flex-grow: 0;
+    margin-left: 5px;
 }
 
-.position-info .panel-row .editable-price-input {
-     flex-grow: 0;
-     margin-left: 5px;
+.info-box .panel-row .editable-price-input {
+    flex-grow: 0;
+    margin-left: 5px;
 }
 
 
@@ -307,23 +305,37 @@ body {
     cursor: pointer;
 }
 
-.position-info {
-    margin-top: 15px;
-    background-color: #f8f9fa;
-    padding: 10px;
-    border-radius: 4px;
-    border: 1px solid #e9ecef;
+/* New common style for info boxes */
+.info-box {
+   margin-top: 15px;
+   background-color: #f8f9fa;
+   padding: 10px 15px; /* Slightly more horizontal padding */
+   border-radius: 4px;
+   border: 1px solid #e9ecef;
+   margin-bottom: 15px; /* Add bottom margin for spacing between boxes */
 }
 
-.position-info h5 {
-    margin-top: 0;
-    margin-bottom: 8px;
-    font-size: 14px;
+/* Apply info-box style specifically if needed, or rely on class in HTML */
+/* #position-info { } */
+/* #open-orders-container { } */
+
+/* Keep h5 styling consistent */
+.info-box h5 {
+   margin-top: 0;
+   margin-bottom: 10px; /* Increased space below title */
+   font-size: 14px;
+   border-bottom: 1px solid #eee; /* Add separator below title */
+   padding-bottom: 6px; /* Space below separator */
 }
 
-.position-info .no-position {
-    color: #6c757d;
-    text-align: center;
+/* Removed specific .position-info h5 rule, handled by .info-box h5 */
+
+.info-box .no-position,
+#open-orders-list p { /* Style for "no orders" message */
+   color: #6c757d;
+   text-align: center;
+   padding: 10px 0; /* Add some padding */
+   font-style: italic;
 }
 
 .position-pnl.positive {
@@ -523,4 +535,89 @@ body {
 
 .position-history-table .pnl-negative {
     color: #dc3545;
+/* --- Open Orders Table Styles --- */
+#open-orders-list {
+    margin-top: 5px; /* Space between title and table/message */
+}
+
+.open-orders-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px; /* Slightly smaller font for table */
+}
+
+.open-orders-table th,
+.open-orders-table td {
+    padding: 5px 8px; /* Adjust padding */
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    vertical-align: middle; /* Align vertically */
+}
+
+.open-orders-table th {
+    color: #555; /* Match label color */
+    font-weight: normal; /* Match label weight */
+    background-color: #f8f9fa; /* Match box background */
+    position: sticky; /* Make header sticky if container scrolls */
+    top: 0;
+    z-index: 1;
+}
+
+.open-orders-table td {
+    color: #333; /* Default text color */
+}
+
+/* Mimic .value style for data cells */
+.open-orders-table .order-side,
+.open-orders-table .order-type,
+.open-orders-table .order-price,
+.open-orders-table .order-qty {
+    font-weight: bold;
+}
+
+/* Right-align numeric/price data and action button */
+.open-orders-table .order-price,
+.open-orders-table .order-qty,
+.open-orders-table .order-action {
+    text-align: right;
+}
+
+/* Specific column styling */
+.open-orders-table .order-time {
+    color: #777; /* Dimmer color for time */
+    white-space: nowrap;
+}
+
+.open-orders-table .order-side.buy {
+    color: #28a745; /* Green for buy */
+}
+
+.open-orders-table .order-side.sell {
+    color: #dc3545; /* Red for sell */
+}
+
+.open-orders-table .order-action {
+    padding-right: 5px; /* Ensure button doesn't touch edge */
+}
+
+.cancel-order-btn {
+    background: none;
+    border: none;
+    color: #dc3545; /* Red color for cancel */
+    font-size: 16px; /* Make the '✕' slightly larger */
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0 5px; /* Minimal padding */
+    line-height: 1; /* Adjust line height */
+    transition: color 0.2s ease;
+}
+
+.cancel-order-btn:hover {
+    color: #a01c28; /* Darker red on hover */
+}
+
+.cancel-order-btn:disabled {
+    color: #ccc;
+    cursor: default;
+}
 }
