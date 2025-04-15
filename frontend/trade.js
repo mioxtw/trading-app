@@ -13,6 +13,7 @@ const maxOrderSizeSpan = document.getElementById('max-order-size');
 const marginRequiredSpan = document.getElementById('margin-required');
 const takeProfitInput = document.getElementById('take-profit-input'); // 新增
 const stopLossInput = document.getElementById('stop-loss-input');   // 新增
+// const takeProfitHalfInput = document.getElementById('take-profit-half-input'); // *** REMOVED - Will be created dynamically ***
 const buyLongBtn = document.getElementById('buy-long-btn');
 const sellShortBtn = document.getElementById('sell-short-btn');
 const positionCountSpan = document.getElementById('position-count');
@@ -21,6 +22,8 @@ const quantityUnitSpan = quantityInput ? quantityInput.nextElementSibling : null
 const closeAllBtn = document.getElementById('close-all-btn');
 const closeHalfBtn = document.getElementById('close-half-btn');
 const positionActionsContainer = document.getElementById('position-actions-container');
+const openOrdersCountSpan = document.getElementById('open-orders-count');
+const openOrdersListDiv = document.getElementById('open-orders-list');
 
 // --- Trade State Variables (subset of original state) ---
 // Assuming window.globalState is defined in the main script.js
@@ -67,6 +70,7 @@ async function fetchInitialData() {
     ]);
     updateAccountPanel(balanceData, positionData);
     fetchAndSetCurrentLeverage(); // Fetch leverage after position data is available
+    fetchAndRenderOpenOrders(); // Fetch open orders on initial load
 }
 
 // --- Update UI Elements ---
@@ -160,6 +164,18 @@ function updateAccountPanel(balanceData, positionRiskData) {
                               data-margin="${estimatedMargin}"
                               data-leverage="${leverage}">${formatCurrency(stopLossPrice, window.globalState.pricePrecision)}</span>
                     </div>
+                    <!-- BEGIN REPLACEMENT: Use editable span for TP Half -->
+                    <div class="panel-row">
+                        <label>止盈平半 (USDT)</label>
+                        ${createPnlInfoHtml(window.globalState[`tpHalfPrice_${currentPosition.symbol}`] || 0, entryPrice, posAmt, estimatedMargin)} <span class="value editable-price"
+                              data-type="tphalf"
+                              data-symbol="${currentPosition.symbol}"
+                              data-entry-price="${entryPrice}"
+                              data-pos-amt="${posAmt}"
+                              data-margin="${estimatedMargin}"
+                              data-leverage="${leverage}">${formatCurrency(window.globalState[`tpHalfPrice_${currentPosition.symbol}`] || 0, window.globalState.pricePrecision)}</span> <!-- Display stored or '未設定' -->
+                    </div>
+                    <!-- END REPLACEMENT -->
                 `;
                 // *** 新增：更新圖表上的持倉線 ***
                 const positionSide = posAmt > 0 ? 'long' : 'short';
@@ -200,6 +216,8 @@ function updateAccountPanel(balanceData, positionRiskData) {
             window.updateTpSlLines(null, null);
         }
         // ******************************
+        // *** REMOVED: TP Half input is now part of position details ***
+        // if (takeProfitHalfInput) takeProfitHalfInput.value = '';
     }
 
     updateCalculations(); // Update margin/max size calculations
@@ -473,7 +491,7 @@ function makePriceEditable(spanElement) {
     }
 
     const currentPriceText = spanElement.textContent.trim();
-    const type = spanElement.dataset.type; // 'tp' or 'sl'
+    const type = spanElement.dataset.type; // 'tp', 'sl', or 'tphalf'
     const symbol = spanElement.dataset.symbol;
     const entryPrice = parseFloat(spanElement.dataset.entryPrice);
     const posAmt = parseFloat(spanElement.dataset.posAmt);
@@ -530,9 +548,11 @@ function makePriceEditable(spanElement) {
             if (posAmt > 0) { // Long
                 if (type === 'tp' && newPriceNum <= latestPrice) validationError = "低於最新價";
                 else if (type === 'sl' && newPriceNum >= latestPrice) validationError = "高於最新價";
+                else if (type === 'tphalf' && newPriceNum <= latestPrice) validationError = "低於最新價"; // TP Half logic similar to TP
             } else { // Short
                 if (type === 'tp' && newPriceNum >= latestPrice) validationError = "高於最新價";
                 else if (type === 'sl' && newPriceNum <= latestPrice) validationError = "低於最新價";
+                else if (type === 'tphalf' && newPriceNum >= latestPrice) validationError = "高於最新價"; // TP Half logic similar to TP
             }
         }
         // 如果無法獲取最新價，則跳過此即時驗證，最終提交時仍會驗證
@@ -618,11 +638,13 @@ function makePriceEditable(spanElement) {
 
             let validationError = null;
             if (posAmt > 0) { // Long position
-                if (type === 'tp' && priceToSend <= latestPrice) validationError = "多單止盈價必須高於最新價"; // 改用 latestPrice
-                else if (type === 'sl' && priceToSend >= latestPrice) validationError = "多單止損價必須低於最新價"; // 改用 latestPrice
+                if (type === 'tp' && priceToSend <= latestPrice) validationError = "多單止盈價必須高於最新價";
+                else if (type === 'sl' && priceToSend >= latestPrice) validationError = "多單止損價必須低於最新價";
+                else if (type === 'tphalf' && priceToSend <= latestPrice) validationError = "多單止盈平半價必須高於最新價"; // Added TP Half validation
             } else { // Short position (posAmt < 0)
-                if (type === 'tp' && priceToSend >= latestPrice) validationError = "空單止盈價必須低於最新價"; // 改用 latestPrice
-                else if (type === 'sl' && priceToSend <= latestPrice) validationError = "空單止損價必須高於最新價"; // 改用 latestPrice
+                if (type === 'tp' && priceToSend >= latestPrice) validationError = "空單止盈價必須低於最新價";
+                else if (type === 'sl' && priceToSend <= latestPrice) validationError = "空單止損價必須高於最新價";
+                else if (type === 'tphalf' && priceToSend >= latestPrice) validationError = "空單止盈平半價必須低於最新價"; // Added TP Half validation
             }
 
             if (validationError) {
@@ -658,7 +680,42 @@ function makePriceEditable(spanElement) {
         const displayPriceForStatus = formatCurrency(priceToSend, window.globalState.pricePrecision); // Use formatted for status message
         updateStatus(`正在${actionText} ${symbol} ${type.toUpperCase()} 價格${priceToSend === 0 ? '' : '為 ' + displayPriceForStatus}...`, 'info');
 
-        const success = await setStopOrder(symbol, type, priceToSend.toFixed(window.globalState.pricePrecision));
+        let success = false;
+        if (type === 'tp' || type === 'sl') {
+            success = await setStopOrder(symbol, type, priceToSend.toFixed(window.globalState.pricePrecision));
+        } else if (type === 'tphalf') {
+            // --- Call API endpoint for TP Half ---
+            const action = priceToSend === 0 ? 'cancel' : 'create';
+            const requestBody = {
+                symbol: symbol,
+                action: action,
+                type: 'tphalf', // Send 'tphalf' as the type
+            };
+            if (action === 'create') {
+                requestBody.price = priceToSend.toFixed(window.globalState.pricePrecision);
+                // Backend will determine side and orderType based on position
+            }
+
+            console.log(`[TP Half] Calling API /conditional-order with body:`, requestBody);
+            try {
+                // Use fetchFromBackend which handles errors and status updates
+                const result = await fetchFromBackend('/conditional-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+                success = result !== null; // fetchFromBackend returns null on failure
+                // Store the attempted price locally ONLY if successful for immediate UI feedback
+                // Ideally, UI should update based on backend confirmation via WS or re-fetch
+                if (success) {
+                     window.globalState[`tpHalfPrice_${symbol}`] = priceToSend; // Store locally on success
+                }
+            } catch (apiError) {
+                 console.error("調用 /conditional-order API 時出錯 (TP Half):", apiError);
+                 updateStatus(`設定止盈平半失敗: ${apiError.message}`, "error");
+                 success = false;
+            }
+        }
 
         // --- Final UI Update ---
         if (document.body.contains(spanElement)) { // Check if span still exists
@@ -667,9 +724,13 @@ function makePriceEditable(spanElement) {
                 spanElement.textContent = finalDisplayPrice; // Update main price display
 
                 // Add the new static PNL info span *before* the price span if setting a price (priceToSend > 0)
-                const pnlHtml = createPnlInfoHtml(priceToSend, entryPrice, posAmt, margin);
-                if (pnlHtml) { // Only insert if calculation was possible
-                     spanElement.insertAdjacentHTML('beforebegin', pnlHtml);
+                // Add the new static PNL info span *before* the price span if setting a price (priceToSend > 0)
+                // Now include tphalf
+                if (type === 'tp' || type === 'sl' || type === 'tphalf') {
+                    const pnlHtml = createPnlInfoHtml(priceToSend, entryPrice, posAmt, margin);
+                    if (pnlHtml) { // Only insert if calculation was possible
+                        spanElement.insertAdjacentHTML('beforebegin', pnlHtml);
+                    }
                 }
 
                 updateStatus(`${symbol} ${type.toUpperCase()} 價格已${actionText}${priceToSend === 0 ? '' : '為 ' + finalDisplayPrice}`, 'success');
@@ -677,11 +738,15 @@ function makePriceEditable(spanElement) {
                 // Revert on failure: Set price text back
                 spanElement.textContent = currentPriceText;
                 // Re-add original static PNL info *before* the price span if it existed and was valid
-                const originalPriceNum = parseFloat(currentPriceText.replace(/,/g, ''));
-                const originalPnlHtml = createPnlInfoHtml(originalPriceNum, entryPrice, posAmt, margin);
-                 if (originalPnlHtml) {
-                    spanElement.insertAdjacentHTML('beforebegin', originalPnlHtml);
-                 }
+                // Re-add original static PNL info *before* the price span if it existed and was valid
+                // Now include tphalf
+                if (type === 'tp' || type === 'sl' || type === 'tphalf') {
+                    const originalPriceNum = parseFloat(currentPriceText.replace(/,/g, ''));
+                    const originalPnlHtml = createPnlInfoHtml(originalPriceNum, entryPrice, posAmt, margin);
+                    if (originalPnlHtml) {
+                        spanElement.insertAdjacentHTML('beforebegin', originalPnlHtml);
+                    }
+                }
                 updateStatus(`${actionText} ${symbol} ${type.toUpperCase()} 價格失敗，恢復原價`, 'error');
             }
         } else {
@@ -840,6 +905,8 @@ async function setStopOrder(symbol, type, price) { // Function name kept for com
     return success; // 返回最終操作的成功狀態
 }
 
+// --- REMOVED: processTpHalfInputChange function (logic merged into makePriceEditable) ---
+
 // --- Event Listeners (Trade related) ---
 // These will be attached in the main script.js after DOM is loaded
 function attachTradeEventListeners() {
@@ -900,6 +967,13 @@ function attachTradeEventListeners() {
             }
         });
     }
+    // *** REMOVED: Event delegation for direct input change (now handled by editable-price click) ***
+
+   // *** MODIFIED: Event delegation for cancel order buttons ***
+   if (openOrdersListDiv) {
+       openOrdersListDiv.addEventListener('click', handleCancelOrderClick);
+   }
+   // *** END MODIFIED ***
 }
 
 // --- Realtime PNL Update ---
@@ -1000,3 +1074,154 @@ function updateSliderFromQuantity() {
 
 
 console.log("trade.js loaded");
+
+// --- BEGIN ADDITION: Open Orders Handling ---
+
+// Function to fetch and render open orders for the current symbol
+async function fetchAndRenderOpenOrders() {
+   if (!window.globalState || !window.globalState.currentSymbol) {
+       console.warn("Cannot fetch open orders: Global state or current symbol not available.");
+       return;
+   }
+   const symbol = window.globalState.currentSymbol;
+   console.log(`[Open Orders] Fetching for ${symbol}...`);
+   if (openOrdersListDiv) openOrdersListDiv.innerHTML = '<p>正在加載委託...</p>'; // Show loading state
+
+   try {
+       const ordersData = await fetchFromBackend(`/open-orders?symbol=${symbol}`);
+       renderOpenOrders(ordersData || []); // Pass empty array if fetch fails or returns null
+   } catch (error) {
+       console.error(`[Open Orders] Error fetching open orders for ${symbol}:`, error);
+       if (openOrdersListDiv) openOrdersListDiv.innerHTML = '<p style="color: red;">加載委託失敗。</p>';
+       if (openOrdersCountSpan) openOrdersCountSpan.textContent = 'Error';
+   }
+}
+
+// Function to render the list of open orders
+// Function to render the list of open orders using a table
+function renderOpenOrders(ordersData) {
+   if (!openOrdersListDiv || !openOrdersCountSpan) {
+       console.error("Open orders container or count span not found.");
+       return;
+   }
+
+   openOrdersListDiv.innerHTML = ''; // Clear previous list
+   openOrdersCountSpan.textContent = ordersData.length; // Update count
+
+   if (ordersData.length === 0) {
+       openOrdersListDiv.innerHTML = '<p>沒有當前委託。</p>';
+       return;
+   }
+
+   // Create table structure
+   const table = document.createElement('table');
+   table.className = 'open-orders-table'; // Add class for styling
+
+   const thead = document.createElement('thead');
+   thead.innerHTML = `
+       <tr>
+           <th>時間</th>
+           <th>方向</th>
+           <th>類型</th>
+           <th>價格</th>
+           <th>數量</th>
+           <th>操作</th>
+       </tr>
+   `;
+   table.appendChild(thead);
+
+   const tbody = document.createElement('tbody');
+   // Sort orders by time descending (newest first)
+   ordersData.sort((a, b) => b.time - a.time);
+
+   ordersData.forEach(order => {
+       const tr = document.createElement('tr');
+       tr.className = 'open-order-item';
+
+       // Translate order types to Chinese
+       let orderTypeZh = order.type;
+       switch (order.type) {
+           case 'LIMIT': orderTypeZh = '限價'; break;
+           case 'MARKET': orderTypeZh = '市價'; break;
+           case 'STOP_MARKET': orderTypeZh = '市價止損'; break;
+           case 'TAKE_PROFIT_MARKET': orderTypeZh = '市價止盈'; break; // Corrected translation
+           case 'STOP': orderTypeZh = '限價止損'; break; // Assuming STOP is LIMIT STOP
+           case 'TAKE_PROFIT': orderTypeZh = '限價止盈'; break; // Assuming TAKE_PROFIT is LIMIT TAKE_PROFIT
+           case 'TRAILING_STOP_MARKET': orderTypeZh = '追蹤止損'; break;
+           default: orderTypeZh = order.type.replace('_', ' '); // Fallback
+       }
+
+       const orderSide = order.side === 'BUY' ? '買入' : '賣出';
+       const sideClass = order.side.toLowerCase();
+       // Display stopPrice for conditional orders, price for limit orders
+       const displayPrice = order.stopPrice > 0 ? `觸 ${formatCurrency(order.stopPrice)}` : (order.price > 0 ? formatCurrency(order.price) : '市價');
+       const quantity = formatNumber(order.origQty);
+       const time = new Date(order.time).toLocaleTimeString();
+
+       tr.innerHTML = `
+           <td class="order-time">${time}</td>
+           <td class="order-side ${sideClass}">${orderSide}</td>
+           <td class="order-type">${orderTypeZh}</td>
+           <td class="order-price">${displayPrice}</td>
+           <td class="order-qty">${quantity}</td>
+           <td class="order-action"><button class="cancel-order-btn" data-order-id="${order.orderId}" data-symbol="${order.symbol}">✕</button></td>
+       `;
+       tbody.appendChild(tr);
+   });
+
+   table.appendChild(tbody);
+   openOrdersListDiv.appendChild(table);
+}
+
+// Function to handle cancel order button clicks (event delegation)
+async function handleCancelOrderClick(event) {
+   const target = event.target;
+   if (!target.classList.contains('cancel-order-btn')) {
+       return; // Click wasn't on a cancel button
+   }
+
+   const orderId = target.dataset.orderId;
+   const symbol = target.dataset.symbol;
+
+   if (!orderId || !symbol) {
+       console.error("無法獲取訂單 ID 或交易對以取消。");
+       return;
+   }
+
+   // Optional: Add confirmation dialog
+   // if (!confirm(`確定要取消訂單 ${orderId} (${symbol}) 嗎？`)) {
+   //     return;
+   // }
+
+   updateStatus(`正在取消訂單 ${orderId}...`, 'info');
+   target.disabled = true; // Disable button while processing
+   target.textContent = '...';
+
+   try {
+       const result = await fetchFromBackend('/cancel-order', {
+           method: 'DELETE',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ symbol, orderId })
+       });
+
+       if (result) {
+           updateStatus(`訂單 ${orderId} 取消成功`, 'success');
+           // Refresh open orders list after successful cancellation
+           fetchAndRenderOpenOrders();
+           // Also refresh position/balance data as cancellation might affect margin etc.
+           fetchInitialData();
+       } else {
+           // fetchFromBackend should have updated status on error
+           target.disabled = false; // Re-enable button on failure
+           target.textContent = '✕';
+       }
+   } catch (error) {
+       // This catch might be redundant if fetchFromBackend handles all errors
+       console.error(`取消訂單 ${orderId} 時出錯:`, error);
+       updateStatus(`取消訂單 ${orderId} 失敗`, 'error');
+       target.disabled = false; // Re-enable button on failure
+       target.textContent = '✕';
+   }
+}
+
+// --- END ADDITION: Open Orders Handling ---

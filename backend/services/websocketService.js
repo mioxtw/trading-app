@@ -23,6 +23,10 @@ let userReconnectAttempt = 0;
 let userReconnectTimer = null;
 // --- END ADDITION ---
 
+// --- REMOVED: Old TP Half state (now handled by API route) ---
+// const activeTpHalfTriggers = {};
+// --- END REMOVED ---
+
 
 const { wsBaseUrl } = config.binance;
 
@@ -72,6 +76,7 @@ function initBackendWss(serverInstance) {
                 if (data.type === 'subscribeMarket' && data.symbol) {
                     connectMarketStream(data.symbol);
                 }
+                // --- REMOVED: Old TP Half WebSocket message handling ---
             } catch (e) { console.error("解析前端 WS 訊息錯誤:", e); }
         });
         wsClient.on('close', () => console.log('前端 WebSocket 客戶端已斷開'));
@@ -398,6 +403,7 @@ function connectMarkPriceStream() {
                     }
                 });
             }
+            // --- REMOVED: Old TP Half trigger check from mark price stream ---
         } catch (e) {
             console.error('處理標記價格數據錯誤:', e);
         }
@@ -417,6 +423,9 @@ function connectMarkPriceStream() {
         setTimeout(connectMarkPriceStream, 5000); // Attempt to reconnect after 5 seconds
     });
 }
+
+// --- REMOVED: Old TP Half trigger function and related code ---
+
 
 module.exports = {
     initBackendWss,

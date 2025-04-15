@@ -419,6 +419,26 @@ async function getTradeHistory(options) {
     return makeRequest('/fapi/v1/userTrades', 'GET', params, false);
 }
 
+// --- 新增：獲取指定交易對的未結訂單 ---
+async function getOpenOrders(symbol) {
+   if (!symbol) {
+       throw new Error("獲取未結訂單需要指定 symbol");
+   }
+   console.log(`正在獲取 ${symbol} 的未結訂單...`);
+   // /fapi/v1/openOrders 是私有 GET 請求
+   return makeRequest('/fapi/v1/openOrders', 'GET', { symbol }, false);
+}
+
+// --- 新增：取消指定訂單 ---
+async function cancelOrder(symbol, orderId) {
+   if (!symbol || !orderId) {
+       throw new Error("取消訂單需要指定 symbol 和 orderId");
+   }
+   console.log(`正在取消訂單: symbol=${symbol}, orderId=${orderId}`);
+   // /fapi/v1/order 是私有 DELETE 請求
+   return makeRequest('/fapi/v1/order', 'DELETE', { symbol, orderId }, false);
+}
+
 // 修改：整理成交紀錄為倉位歷史 (查詢過去 6 個月，每 7 天查詢一次)
 async function getPositionHistory(symbol) { // 移除 limit, startTime, endTime 參數
     console.log(`正在整理 ${symbol} 的過去 6 個月倉位歷史紀錄...`);
@@ -623,4 +643,6 @@ module.exports = {
     placeOrCancelConditionalOrder,
     getTradeHistory,
     getPositionHistory, // <--- 導出新函數
+    getOpenOrders, // <-- Export new function
+    cancelOrder,   // <-- Export new function
 };

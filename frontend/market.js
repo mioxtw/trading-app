@@ -108,6 +108,27 @@ function subscribeToMarket(symbol) {
     }
 }
 
+// --- BEGIN ADDITION: Generic function to send WS messages ---
+window.sendMessageToBackend = function(messageObject) {
+    if (window.globalState && window.globalState.backendWs && window.globalState.backendWs.readyState === WebSocket.OPEN) {
+        try {
+            const messageString = JSON.stringify(messageObject);
+            console.log(`[WS Send] Sending message:`, messageObject);
+            window.globalState.backendWs.send(messageString);
+            return true; // Indicate success
+        } catch (e) {
+            console.error("透過 WS 發送訊息失敗:", e, messageObject);
+            updateStatus("無法發送請求到後端 (序列化錯誤)", "error");
+            return false; // Indicate failure
+        }
+    } else {
+        console.warn("後端 WebSocket 未連接，無法發送訊息:", messageObject);
+        updateStatus("後端 WebSocket 未連接", "warning");
+        return false; // Indicate failure
+    }
+}
+// --- END ADDITION ---
+
 
 function handleBackendWsMessage(message) {
     if (!message || !message.type) return;
@@ -133,19 +154,19 @@ function handleBackendWsMessage(message) {
             // Trigger data refresh in trade.js
             console.log("偵測到用戶數據事件，從後端重新獲取數據...");
             if (typeof fetchInitialData === 'function') {
-                fetchInitialData();
+                fetchInitialData(); // This implicitly refreshes orders too
             } else {
                  console.error("fetchInitialData function not found for user update.");
             }
             break;
         case 'conditionalOrderUpdate': // Handle TP/SL updates
-            console.log(`收到條件訂單更新 (${message.action} ${message.orderType} for ${message.symbol})，重新獲取數據...`);
+            console.log(`收到條件訂單更新 (${message.action} ${message.orderType} for ${message.symbol})，刷新訂單列表...`);
             updateStatus(`後端回報 ${message.symbol} ${message.orderType.toUpperCase()} ${message.action === 'create' ? '設定' : '取消'} 操作已發送。正在刷新...`, 'info');
-            // Trigger data refresh in trade.js
-             if (typeof fetchInitialData === 'function') {
-                fetchInitialData();
+            // Only refresh orders list
+            if (typeof fetchAndRenderOpenOrders === 'function') {
+                fetchAndRenderOpenOrders();
             } else {
-                 console.error("fetchInitialData function not found for conditional order update.");
+                console.warn("fetchAndRenderOpenOrders function not found for conditional order update refresh.");
             }
             break;
         case 'error':
@@ -171,10 +192,10 @@ function handleBackendWsMessage(message) {
                 backendModeSpan.textContent = message.apiMode.toUpperCase();
             }
             break;
-        case 'markPriceUpdate':
-            // Handle mark price updates from the backend
-            if (message.data && message.data.s === window.globalState.currentSymbol) {
-                const markPrice = parseFloat(message.data.p);
+       case 'markPriceUpdate':
+           // Handle mark price updates from the backend
+           if (message.data && message.data.s === window.globalState.currentSymbol) {
+               const markPrice = parseFloat(message.data.p);
                 if (!isNaN(markPrice)) {
                     // Update global state immediately
                     window.globalState.currentMarkPrice = markPrice;
@@ -192,7 +213,52 @@ function handleBackendWsMessage(message) {
                     console.warn("收到無效的標記價格數據:", message.data);
                 }
             }
+           break;
+       // --- BEGIN ADDITION: Handle Take Profit Half messages ---
+       case 'tpHalfSet':
+           console.log(`[TP Half] 後端確認設定: ${message.symbol} at ${message.price}`);
+           updateStatus(`${message.symbol} 止盈平半觸發器已設定於 ${message.price}`, 'success');
+           // Refresh open orders list
+           if (typeof fetchAndRenderOpenOrders === 'function') {
+               fetchAndRenderOpenOrders();
+           } else {
+               console.warn("fetchAndRenderOpenOrders function not found for tpHalfSet refresh.");
+           }
             break;
+      case 'tpHalfCancelled':
+          console.log(`[TP Half] 後端確認取消: ${message.symbol}`);
+          updateStatus(`${message.symbol} 止盈平半觸發器已取消`, 'success');
+          // Refresh open orders list
+          if (typeof fetchAndRenderOpenOrders === 'function') {
+              fetchAndRenderOpenOrders();
+          } else {
+              console.warn("fetchAndRenderOpenOrders function not found for tpHalfCancelled refresh.");
+          }
+            break;
+        case 'tpHalfExecuted':
+            console.log(`[TP Half] 後端回報執行: ${message.symbol} at ${message.executedPrice}, closed ${message.closedQuantity}`);
+            updateStatus(`${message.symbol} 止盈平半已觸發 @ ${message.executedPrice}，平倉 ${message.closedQuantity}`, 'success');
+            // Refresh account data (which includes orders)
+            if (typeof fetchInitialData === 'function') {
+                console.log("[TP Half] 觸發執行後，重新獲取賬戶數據...");
+                fetchInitialData();
+            } else {
+                console.error("fetchInitialData function not found after TP Half execution.");
+            }
+            break;
+      // --- END ADDITION ---
+      // *** ADDED: Handle orderCancelled message from backend ***
+      case 'orderCancelled':
+          console.log(`[WS] 後端確認訂單取消: ${message.symbol} ID: ${message.orderId}`);
+          updateStatus(`訂單 ${message.orderId} 已取消`, 'success');
+          // Refresh account data (which includes orders)
+          if (typeof fetchInitialData === 'function') {
+              fetchInitialData();
+          } else {
+              console.error("fetchInitialData function not found for orderCancelled refresh.");
+          }
+          break;
+        // *** END ADDED ***
         default:
             console.log("收到未知的後端 WS 訊息類型:", message.type);
     }
